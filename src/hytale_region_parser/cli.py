@@ -57,24 +57,81 @@ def detect_folder_structure(input_path: Path) -> Tuple[str, Dict[str, List[Path]
     return ("empty", {})
 
 
-def parse_single_file(filepath: Path, indent: Optional[int] = 2) -> Dict[str, Any]:
+def parse_single_file(
+    filepath: Path, 
+    indent: Optional[int] = 2,
+    include_all_blocks: bool = True,
+    summary_only: bool = False
+) -> Dict[str, Any]:
     """Parse a single region file and return the data dictionary."""
     with RegionFileParser(filepath) as parser:
-        return parser.to_dict()
+        if summary_only:
+            return parser.to_dict_summary_only()
+        return parser.to_dict(include_all_blocks=include_all_blocks)
 
 
-def parse_multiple_files(filepaths: List[Path], indent: Optional[int] = 2, quiet: bool = False) -> Dict[str, Any]:
+def parse_multiple_files(
+    filepaths: List[Path], 
+    indent: Optional[int] = 2, 
+    quiet: bool = False,
+    include_all_blocks: bool = True,
+    summary_only: bool = False
+) -> Dict[str, Any]:
     """Parse multiple region files and merge into a single dictionary."""
-    result: Dict[str, Any] = {}
-    for filepath in filepaths:
-        if not quiet:
-            print(f"Parsing {filepath.name}...", file=sys.stderr)
-        try:
-            file_data = parse_single_file(filepath, indent)
-            result.update(file_data)
-        except Exception as e:
-            print(f"Warning: Failed to parse {filepath}: {e}", file=sys.stderr)
-    return result
+    if summary_only:
+        # For summary mode, aggregate block summaries
+        combined_summary: Dict[str, int] = {}
+        combined_containers: List[Dict] = []
+        total_chunks = 0
+        
+        for filepath in filepaths:
+            if not quiet:
+                print(f"Parsing {filepath.name}...", file=sys.stderr)
+            try:
+                with RegionFileParser(filepath) as parser:
+                    data = parser.to_dict_summary_only()
+                    total_chunks += data["metadata"]["chunk_count"]
+                    for block_name, count in data["block_summary"].items():
+                        combined_summary[block_name] = combined_summary.get(block_name, 0) + count
+                    combined_containers.extend(data.get("containers", []))
+            except Exception as e:
+                print(f"Warning: Failed to parse {filepath}: {e}", file=sys.stderr)
+        
+        return {
+            "metadata": {
+                "total_chunks": total_chunks,
+                "total_region_files": len(filepaths)
+            },
+            "block_summary": combined_summary,
+            "containers": combined_containers
+        }
+    else:
+        # For full mode, merge all blocks
+        result: Dict[str, Any] = {
+            "metadata": {
+                "total_chunks": 0,
+                "total_region_files": len(filepaths),
+                "block_summary": {}
+            },
+            "blocks": {}
+        }
+        
+        for filepath in filepaths:
+            if not quiet:
+                print(f"Parsing {filepath.name}...", file=sys.stderr)
+            try:
+                file_data = parse_single_file(filepath, indent, include_all_blocks, summary_only=False)
+                result["metadata"]["total_chunks"] += file_data["metadata"]["chunk_count"]
+                # Merge block summary
+                for block_name, count in file_data["metadata"]["block_summary"].items():
+                    result["metadata"]["block_summary"][block_name] = \
+                        result["metadata"]["block_summary"].get(block_name, 0) + count
+                # Merge blocks
+                result["blocks"].update(file_data["blocks"])
+            except Exception as e:
+                print(f"Warning: Failed to parse {filepath}: {e}", file=sys.stderr)
+        
+        return result
 
 
 def get_output_filename_for_single_file(input_path: Path) -> Path:
@@ -138,6 +195,18 @@ Examples:
     )
     
     parser.add_argument(
+        '--summary-only', '-s',
+        action='store_true',
+        help='Output block counts summary only (no individual block positions - much faster)'
+    )
+    
+    parser.add_argument(
+        '--no-blocks',
+        action='store_true',
+        help='Exclude terrain blocks, only include containers and block components'
+    )
+    
+    parser.add_argument(
         '--version', '-V',
         action='version',
         version='%(prog)s 0.1.0'
@@ -152,12 +221,14 @@ Examples:
     
     indent = None if args.compact else 2
     cwd = Path.cwd()
+    include_all_blocks = not args.no_blocks
+    summary_only = args.summary_only
     
     try:
         # Check if input is a file or directory
         if args.input_path.is_file():
             # Single file mode
-            data = parse_single_file(args.input_path, indent)
+            data = parse_single_file(args.input_path, indent, include_all_blocks, summary_only)
             json_output = json.dumps(data, indent=indent, default=str)
             
             if args.stdout:
@@ -186,7 +257,7 @@ Examples:
                     if not args.quiet:
                         print(f"\nProcessing world: {world_name} ({len(region_files)} files)", file=sys.stderr)
                     
-                    data = parse_multiple_files(region_files, indent, args.quiet)
+                    data = parse_multiple_files(region_files, indent, args.quiet, include_all_blocks, summary_only)
                     json_output = json.dumps(data, indent=indent, default=str)
                     
                     if args.stdout:
@@ -205,7 +276,7 @@ Examples:
                 if not args.quiet:
                     print(f"Processing world: {world_name} ({len(region_files)} files)", file=sys.stderr)
                 
-                data = parse_multiple_files(region_files, indent, args.quiet)
+                data = parse_multiple_files(region_files, indent, args.quiet, include_all_blocks, summary_only)
                 json_output = json.dumps(data, indent=indent, default=str)
                 
                 if args.stdout:
@@ -222,7 +293,7 @@ Examples:
                 if not args.quiet:
                     print(f"Processing {len(region_files)} files from {args.input_path.name}", file=sys.stderr)
                 
-                data = parse_multiple_files(region_files, indent, args.quiet)
+                data = parse_multiple_files(region_files, indent, args.quiet, include_all_blocks, summary_only)
                 json_output = json.dumps(data, indent=indent, default=str)
                 
                 if args.stdout:

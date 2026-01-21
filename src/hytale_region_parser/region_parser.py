@@ -6,10 +6,10 @@ High-level parser for Hytale .region.bin files.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple, TYPE_CHECKING
 
 from .chunk_parser import ChunkDataParser
-from .models import ParsedChunkData, RegionData
+from .models import ParsedChunkData, RegionData, ChunkSectionData
 from .storage import IndexedStorageFile
 
 
@@ -164,26 +164,41 @@ class RegionFileParser:
             if chunk:
                 yield chunk
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, include_all_blocks: bool = True) -> Dict[str, Any]:
         """
         Convert all region data to a JSON-serializable dictionary.
         
+        Args:
+            include_all_blocks: If True, includes all terrain blocks from sections.
+                               If False, only includes containers and block components.
+        
         Format:
             {
-                "x,y,z": {
-                    "name": "Block_Name",
-                    "components": {...},
-                    ...
+                "metadata": {
+                    "region_x": int,
+                    "region_z": int,
+                    "chunk_count": int,
+                    "block_summary": {"Block_Name": count, ...}
                 },
-                ...
+                "blocks": {
+                    "x,y,z": {
+                        "name": "Block_Name",
+                        "components": {...},
+                        ...
+                    },
+                    ...
+                }
             }
         
         Returns:
-            Dictionary with position keys mapping to block data
+            Dictionary with metadata and blocks
         """
-        result: Dict[str, Any] = {}
+        blocks: Dict[str, Any] = {}
+        block_summary: Dict[str, int] = {}
+        chunk_count = 0
         
         for chunk in self.iter_chunks():
+            chunk_count += 1
             chunk_base_x = chunk.chunk_x * 32
             chunk_base_z = chunk.chunk_z * 32
             
@@ -194,7 +209,7 @@ class RegionFileParser:
                 world_z = chunk_base_z + local_z
                 key = f"{world_x},{y},{world_z}"
                 
-                result[key] = {
+                blocks[key] = {
                     "name": "Container",
                     "components": {
                         "container": {
@@ -207,6 +222,7 @@ class RegionFileParser:
                         }
                     }
                 }
+                block_summary["Container"] = block_summary.get("Container", 0) + 1
             
             # Add block components with world positions
             for component in chunk.block_components:
@@ -215,18 +231,199 @@ class RegionFileParser:
                 world_z = chunk_base_z + local_z
                 key = f"{world_x},{y},{world_z}"
                 
-                if key in result:
+                if key in blocks:
                     # Merge with existing entry
-                    if "components" not in result[key]:
-                        result[key]["components"] = {}
-                    result[key]["components"][component.component_type] = component.data
+                    if "components" not in blocks[key]:
+                        blocks[key]["components"] = {}
+                    blocks[key]["components"][component.component_type] = component.data
                 else:
-                    result[key] = {
+                    blocks[key] = {
                         "name": component.component_type,
                         "components": {
                             component.component_type: component.data
                         }
                     }
+            
+            # Add all blocks from sections if requested
+            if include_all_blocks:
+                for section in chunk.sections:
+                    section_base_y = section.section_y * 32
+                    
+                    # Aggregate block counts from section
+                    for block_name, count in section.block_counts.items():
+                        if block_name and block_name != "Empty":
+                            block_summary[block_name] = block_summary.get(block_name, 0) + count
+                    
+                    # If we have block indices, we can compute positions
+                    if section.block_indices and section.block_palette:
+                        self._extract_block_positions(
+                            section, chunk_base_x, section_base_y, chunk_base_z, blocks
+                        )
+        
+        return {
+            "metadata": {
+                "region_x": self.region_x,
+                "region_z": self.region_z,
+                "chunk_count": chunk_count,
+                "block_summary": block_summary
+            },
+            "blocks": blocks
+        }
+    
+    def _extract_block_positions(
+        self, 
+        section: 'ChunkSectionData',
+        chunk_base_x: int,
+        section_base_y: int,
+        chunk_base_z: int,
+        blocks: Dict[str, Any]
+    ) -> None:
+        """
+        Extract individual block positions from section indices.
+        
+        This method decodes the block indices to get exact positions.
+        Only non-Empty blocks are added to the output.
+        """
+        if not section.block_indices or not section.block_palette:
+            return
+        
+        # Build internal ID -> block name lookup
+        id_to_name: Dict[int, str] = {}
+        for entry in section.block_palette:
+            id_to_name[entry.internal_id] = entry.name
+        
+        indices = section.block_indices
+        palette_type = section.palette_type
+        
+        # Section size is 32x32x32 = 32768 blocks
+        # Index = x + z*32 + y*32*32
+        
+        if palette_type == 1:  # HalfByte (nibble) storage
+            # Each byte contains 2 block indices (4 bits each)
+            for byte_idx, byte_val in enumerate(indices):
+                block_idx_low = byte_idx * 2
+                block_idx_high = byte_idx * 2 + 1
+                
+                low_nibble = byte_val & 0x0F
+                high_nibble = (byte_val >> 4) & 0x0F
+                
+                # Process low nibble
+                if block_idx_low < 32768:
+                    name = id_to_name.get(low_nibble, "Unknown")
+                    if name and name != "Empty":
+                        local_x = block_idx_low % 32
+                        local_z = (block_idx_low // 32) % 32
+                        local_y = block_idx_low // (32 * 32)
+                        
+                        world_x = chunk_base_x + local_x
+                        world_y = section_base_y + local_y
+                        world_z = chunk_base_z + local_z
+                        key = f"{world_x},{world_y},{world_z}"
+                        
+                        if key not in blocks:
+                            blocks[key] = {"name": name}
+                
+                # Process high nibble  
+                if block_idx_high < 32768:
+                    name = id_to_name.get(high_nibble, "Unknown")
+                    if name and name != "Empty":
+                        local_x = block_idx_high % 32
+                        local_z = (block_idx_high // 32) % 32
+                        local_y = block_idx_high // (32 * 32)
+                        
+                        world_x = chunk_base_x + local_x
+                        world_y = section_base_y + local_y
+                        world_z = chunk_base_z + local_z
+                        key = f"{world_x},{world_y},{world_z}"
+                        
+                        if key not in blocks:
+                            blocks[key] = {"name": name}
+        
+        elif palette_type == 2:  # Byte storage
+            for block_idx, internal_id in enumerate(indices):
+                if block_idx >= 32768:
+                    break
+                name = id_to_name.get(internal_id, "Unknown")
+                if name and name != "Empty":
+                    local_x = block_idx % 32
+                    local_z = (block_idx // 32) % 32
+                    local_y = block_idx // (32 * 32)
+                    
+                    world_x = chunk_base_x + local_x
+                    world_y = section_base_y + local_y
+                    world_z = chunk_base_z + local_z
+                    key = f"{world_x},{world_y},{world_z}"
+                    
+                    if key not in blocks:
+                        blocks[key] = {"name": name}
+        
+        elif palette_type == 3:  # Short storage
+            import struct
+            for i in range(0, min(len(indices), 32768 * 2), 2):
+                block_idx = i // 2
+                if block_idx >= 32768:
+                    break
+                internal_id = struct.unpack('>H', indices[i:i+2])[0]
+                name = id_to_name.get(internal_id, "Unknown")
+                if name and name != "Empty":
+                    local_x = block_idx % 32
+                    local_z = (block_idx // 32) % 32
+                    local_y = block_idx // (32 * 32)
+                    
+                    world_x = chunk_base_x + local_x
+                    world_y = section_base_y + local_y
+                    world_z = chunk_base_z + local_z
+                    key = f"{world_x},{world_y},{world_z}"
+                    
+                    if key not in blocks:
+                        blocks[key] = {"name": name}
+    
+    def to_dict_summary_only(self) -> Dict[str, Any]:
+        """
+        Convert region data to a summary dictionary (without individual block positions).
+        
+        This is much faster for large regions as it doesn't decode block positions.
+        
+        Returns:
+            Dictionary with metadata and block counts
+        """
+        block_summary: Dict[str, int] = {}
+        chunk_count = 0
+        containers: List[Dict] = []
+        
+        for chunk in self.iter_chunks():
+            chunk_count += 1
+            chunk_base_x = chunk.chunk_x * 32
+            chunk_base_z = chunk.chunk_z * 32
+            
+            # Collect containers
+            for container in chunk.containers:
+                local_x, y, local_z = container.position
+                world_x = chunk_base_x + local_x
+                world_z = chunk_base_z + local_z
+                containers.append({
+                    "position": [world_x, y, world_z],
+                    "capacity": container.capacity,
+                    "items_count": len(container.items),
+                    "custom_name": container.custom_name
+                })
+                block_summary["Container"] = block_summary.get("Container", 0) + 1
+            
+            # Aggregate block counts from sections
+            for section in chunk.sections:
+                for block_name, count in section.block_counts.items():
+                    if block_name and block_name != "Empty":
+                        block_summary[block_name] = block_summary.get(block_name, 0) + count
+        
+        return {
+            "metadata": {
+                "region_x": self.region_x,
+                "region_z": self.region_z,
+                "chunk_count": chunk_count
+            },
+            "block_summary": block_summary,
+            "containers": containers
+        }
         
         return result
     

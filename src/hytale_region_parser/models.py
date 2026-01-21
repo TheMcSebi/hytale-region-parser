@@ -31,10 +31,21 @@ class ItemContainerData:
 
 
 @dataclass
+class BlockPaletteEntry:
+    """Represents a single entry in the block palette"""
+    internal_id: int
+    name: str
+    count: int
+
+
+@dataclass
 class ChunkSectionData:
     """Represents a 32x32x32 chunk section"""
     section_y: int
-    block_palette: List[str] = field(default_factory=list)
+    block_palette: List[BlockPaletteEntry] = field(default_factory=list)
+    block_counts: Dict[str, int] = field(default_factory=dict)  # Block name -> count
+    block_indices: Optional[bytes] = None  # Raw block index data
+    palette_type: int = 0  # 0=Empty, 1=HalfByte, 2=Byte, 3=Short
     block_data: Optional[bytes] = None
     filler_data: Optional[bytes] = None
     rotation_data: Optional[bytes] = None

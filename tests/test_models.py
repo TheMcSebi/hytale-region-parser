@@ -3,6 +3,7 @@
 import pytest
 from hytale_region_parser.models import (
     BlockComponent,
+    BlockPaletteEntry,
     ChunkSectionData,
     ItemContainerData,
     ParsedChunkData,
@@ -74,17 +75,26 @@ class TestChunkSectionData:
         section = ChunkSectionData(section_y=5)
         assert section.section_y == 5
         assert section.block_palette == []
+        assert section.block_counts == {}
         assert section.block_data is None
         assert section.has_light_data is False
 
     def test_with_palette(self):
         """Test ChunkSectionData with block palette."""
+        palette = [
+            BlockPaletteEntry(internal_id=0, name="Empty", count=1000),
+            BlockPaletteEntry(internal_id=1, name="Rock_Stone", count=500),
+            BlockPaletteEntry(internal_id=2, name="Soil_Dirt", count=200),
+            BlockPaletteEntry(internal_id=3, name="Plant_Grass", count=100),
+        ]
         section = ChunkSectionData(
             section_y=3,
-            block_palette=["Rock_Stone", "Soil_Dirt", "Plant_Grass"]
+            block_palette=palette,
+            block_counts={"Rock_Stone": 500, "Soil_Dirt": 200, "Plant_Grass": 100}
         )
-        assert len(section.block_palette) == 3
-        assert "Rock_Stone" in section.block_palette
+        assert len(section.block_palette) == 4
+        assert section.block_palette[1].name == "Rock_Stone"
+        assert section.block_counts["Rock_Stone"] == 500
 
 
 class TestParsedChunkData:

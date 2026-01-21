@@ -29,6 +29,7 @@ from .bson_parser import BsonParser, BsonType
 from .chunk_parser import ChunkDataParser
 from .models import (
     BlockComponent,
+    BlockPaletteEntry,
     ChunkSectionData,
     ItemContainerData,
     ParsedChunkData,
@@ -50,6 +51,7 @@ __all__ = [
     # Data models
     "ParsedChunkData",
     "ChunkSectionData",
+    "BlockPaletteEntry",
     "BlockComponent",
     "ItemContainerData",
     "RegionData",
