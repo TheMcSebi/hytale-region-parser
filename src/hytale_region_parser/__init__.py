@@ -32,6 +32,7 @@ from .models import (
     ChunkSectionData,
     ItemContainerData,
     ParsedChunkData,
+    RegionData,
 )
 from .region_parser import RegionFileParser
 from .storage import IndexedStorageFile
@@ -51,6 +52,7 @@ __all__ = [
     "ChunkSectionData",
     "BlockComponent",
     "ItemContainerData",
+    "RegionData",
     # Version
     "__version__",
 ]

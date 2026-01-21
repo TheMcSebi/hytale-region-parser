@@ -12,16 +12,19 @@ This tool parses Hytale world region files to extract and analyze chunk data, in
 
 The code is mostly written by letting Claude Sonnet and Opus analyze the HytaleServer.jar's decompiled code and reimplementing the relevant parts in Python. I mainly wrote this because I wanted to learn about ore distribution, but this might serve others as a starter, too.
 
+There is still a bug regarding parsed entity names, that I haven't been able to figure out.
+
 ## Features
 
 - Parse IndexedStorageFile format (`.region.bin` files)
+- **JSON output by default** with position-keyed block data
 - Extract chunk data with block palettes and component information
 - Decode BSON documents using Hytale's codec format
 - Identify and list unique block types across regions
 - Parse item containers (chests, barrels, etc.) with position and capacity
 - Extract block components and entity data
 - Support for zstandard decompression
-- Multiple output modes: basic list, summary, and detailed analysis
+- Multiple output modes: JSON (default), summary, and detailed analysis
 - Type hints and dataclasses for clean API
 - Command-line interface and Python API
 
@@ -52,17 +55,20 @@ pip install -e ".[dev]"
 ### Command Line
 
 ```bash
-# Basic parsing - list all chunks
+# Default: JSON output to stdout
 hytale-region-parser path/to/0.0.region.bin
 
-# Summary mode - show all unique blocks and components
+# Save JSON to file
+hytale-region-parser path/to/0.0.region.bin -o output.json
+
+# Compact JSON (no indentation)
+hytale-region-parser path/to/0.0.region.bin --compact
+
+# Summary mode - show all unique blocks and components (legacy text output)
 hytale-region-parser path/to/0.0.region.bin --summary
 
-# Detailed mode - show BSON structure for debugging
+# Detailed mode - show BSON structure for debugging (legacy text output)
 hytale-region-parser path/to/0.0.region.bin --detailed
-
-# Analyze more chunks in detailed mode
-hytale-region-parser path/to/0.0.region.bin --detailed --max-chunks 10
 ```
 
 ### Python API
@@ -71,9 +77,17 @@ hytale-region-parser path/to/0.0.region.bin --detailed --max-chunks 10
 from pathlib import Path
 from hytale_region_parser import RegionFileParser
 
-# Using context manager (recommended)
+# Get JSON output (recommended)
 with RegionFileParser(Path("0.0.region.bin")) as parser:
-    # Iterate over all chunks
+    # Get as dictionary
+    data = parser.to_dict()
+    
+    # Or as JSON string
+    json_str = parser.to_json(indent=2)
+    print(json_str)
+
+# Iterate over chunks for custom processing
+with RegionFileParser(Path("0.0.region.bin")) as parser:
     for chunk in parser.iter_chunks():
         print(f"Chunk ({chunk.chunk_x}, {chunk.chunk_z})")
         print(f"  Block types: {len(chunk.block_names)}")
@@ -85,39 +99,53 @@ with RegionFileParser(Path("0.0.region.bin")) as parser:
     print(f"Unique block types: {summary['unique_blocks']}")
 ```
 
+## JSON Output Format
+
+The default output is JSON with world coordinates as keys:
+
+```json
+{
+  "100,64,200": {
+    "name": "Container",
+    "components": {
+      "container": {
+        "capacity": 18,
+        "items": [
+          {"Id": "Ore_Copper", "Quantity": 4}
+        ],
+        "allow_viewing": true,
+        "custom_name": null
+      }
+    }
+  },
+  "150,32,180": {
+    "name": "FarmingBlock",
+    "components": {
+      "FarmingBlock": {
+        "SpreadRate": 0.0
+      }
+    }
+  }
+}
+```
+
+The coordinates are in world space (`chunk_x * 32 + local_x`, etc.).
+
 ## Legacy Usage
 
 The original script is still available for standalone use:
 
-### Basic Chunk Listing
-
-Display all chunks with data in a region file:
-
 ```bash
-python parse_region.py chunks/0.0.region.bin
-```
-
-### Summary Mode
-
-Generate a comprehensive summary of all blocks, containers, and components:
-
-```bash
+# Text output modes
 python parse_region.py chunks/0.0.region.bin --summary
+python parse_region.py chunks/0.0.region.bin --detailed
 ```
 
-This mode outputs:
+The `--summary` mode outputs:
 - Total unique block types with occurrence counts
 - Blocks grouped by category
 - Item container locations and contents
 - Block component types and positions
-
-### Detailed Analysis
-
-Show detailed BSON structure for the first few chunks:
-
-```bash
-python parse_region.py chunks/0.0.region.bin --detailed
-```
 
 ## Data Models
 

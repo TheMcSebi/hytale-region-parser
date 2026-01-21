@@ -3,6 +3,7 @@ Command-line interface for Hytale Region Parser
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -20,7 +21,7 @@ Examples:
   hytale-region-parser chunks/0.0.region.bin
   hytale-region-parser chunks/0.0.region.bin --summary
   hytale-region-parser chunks/0.0.region.bin --detailed
-  hytale-region-parser chunks/0.0.region.bin --detailed --max-chunks 10
+  hytale-region-parser chunks/0.0.region.bin -o output.json
         """
     )
     
@@ -33,13 +34,13 @@ Examples:
     parser.add_argument(
         '--summary',
         action='store_true',
-        help='Show summary of all unique blocks, containers, and components'
+        help='Show summary of all unique blocks, containers, and components (legacy text output)'
     )
     
     parser.add_argument(
         '--detailed',
         action='store_true',
-        help='Show detailed BSON structure of first few chunks'
+        help='Show detailed BSON structure of first few chunks (legacy text output)'
     )
     
     parser.add_argument(
@@ -51,9 +52,22 @@ Examples:
     )
     
     parser.add_argument(
+        '--output', '-o',
+        type=Path,
+        metavar='FILE',
+        help='Output file path (default: stdout)'
+    )
+    
+    parser.add_argument(
+        '--compact',
+        action='store_true',
+        help='Output compact JSON without indentation'
+    )
+    
+    parser.add_argument(
         '--quiet', '-q',
         action='store_true',
-        help='Suppress output (useful with --json)'
+        help='Suppress non-JSON output'
     )
     
     parser.add_argument(
@@ -74,11 +88,23 @@ Examples:
     
     try:
         if args.summary:
+            # Legacy summary mode
             region_parser.parse_summary(verbose=not args.quiet)
         elif args.detailed:
+            # Legacy detailed mode
             region_parser.parse_detailed(max_chunks=args.max_chunks, verbose=not args.quiet)
         else:
-            region_parser.parse(verbose=not args.quiet)
+            # Default: JSON output
+            with region_parser:
+                indent = None if args.compact else 2
+                json_output = region_parser.to_json(indent=indent)
+                
+                if args.output:
+                    args.output.write_text(json_output, encoding='utf-8')
+                    if not args.quiet:
+                        print(f"Output written to {args.output}", file=sys.stderr)
+                else:
+                    print(json_output)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

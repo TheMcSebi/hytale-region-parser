@@ -6,6 +6,7 @@ from hytale_region_parser.models import (
     ChunkSectionData,
     ItemContainerData,
     ParsedChunkData,
+    RegionData,
 )
 
 
@@ -127,3 +128,92 @@ class TestParsedChunkData:
         
         assert len(chunk.block_components) == 1
         assert len(chunk.containers) == 1
+
+    def test_to_dict_empty(self):
+        """Test to_dict with empty chunk."""
+        chunk = ParsedChunkData()
+        result = chunk.to_dict()
+        assert result == {}
+
+    def test_to_dict_with_container(self):
+        """Test to_dict with container data."""
+        chunk = ParsedChunkData()
+        chunk.containers.append(
+            ItemContainerData(
+                position=(10, 64, 20),
+                capacity=18,
+                items=[{"Id": "Diamond", "Quantity": 5}],
+                custom_name="My Chest"
+            )
+        )
+        
+        result = chunk.to_dict()
+        assert "10,64,20" in result
+        assert result["10,64,20"]["type"] == "container"
+        assert result["10,64,20"]["capacity"] == 18
+        assert result["10,64,20"]["custom_name"] == "My Chest"
+
+    def test_to_dict_with_block_component(self):
+        """Test to_dict with block component data."""
+        chunk = ParsedChunkData()
+        chunk.block_components.append(
+            BlockComponent(
+                index=100,
+                position=(5, 32, 10),
+                component_type="FarmingBlock",
+                data={"SpreadRate": 0.5}
+            )
+        )
+        
+        result = chunk.to_dict()
+        assert "5,32,10" in result
+        assert result["5,32,10"]["type"] == "block_component"
+        assert "FarmingBlock" in result["5,32,10"]["components"]
+        assert result["5,32,10"]["components"]["FarmingBlock"]["SpreadRate"] == 0.5
+
+    def test_to_dict_merge_components(self):
+        """Test that multiple components at same position are merged."""
+        chunk = ParsedChunkData()
+        chunk.block_components.append(
+            BlockComponent(
+                index=100,
+                position=(5, 32, 10),
+                component_type="TypeA",
+                data={"value": 1}
+            )
+        )
+        chunk.block_components.append(
+            BlockComponent(
+                index=100,
+                position=(5, 32, 10),
+                component_type="TypeB",
+                data={"value": 2}
+            )
+        )
+        
+        result = chunk.to_dict()
+        assert "5,32,10" in result
+        assert "TypeA" in result["5,32,10"]["components"]
+        assert "TypeB" in result["5,32,10"]["components"]
+
+
+class TestRegionData:
+    """Tests for RegionData dataclass."""
+
+    def test_default_values(self):
+        """Test default values for RegionData."""
+        region = RegionData()
+        assert region.region_x == 0
+        assert region.region_z == 0
+        assert region.blocks == {}
+
+    def test_to_dict(self):
+        """Test RegionData to_dict method."""
+        region = RegionData(
+            region_x=1,
+            region_z=2,
+            blocks={"100,64,200": {"name": "Test", "components": {}}}
+        )
+        result = region.to_dict()
+        assert "100,64,200" in result
+        assert result["100,64,200"]["name"] == "Test"
