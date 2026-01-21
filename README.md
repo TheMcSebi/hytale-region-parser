@@ -17,14 +17,15 @@ There is still a bug regarding parsed entity names, that I haven't been able to 
 ## Features
 
 - Parse IndexedStorageFile format (`.region.bin` files)
-- **JSON output by default** with position-keyed block data
+- **JSON output to file by default** with position-keyed block data
+- **Folder processing** - parse entire directories or universe structures
+- All output files written to current working directory
 - Extract chunk data with block palettes and component information
 - Decode BSON documents using Hytale's codec format
 - Identify and list unique block types across regions
 - Parse item containers (chests, barrels, etc.) with position and capacity
 - Extract block components and entity data
 - Support for zstandard decompression
-- Multiple output modes: JSON (default), summary, and detailed analysis
 - Type hints and dataclasses for clean API
 - Command-line interface and Python API
 
@@ -55,20 +56,29 @@ pip install -e ".[dev]"
 ### Command Line
 
 ```bash
-# Default: JSON output to stdout
-hytale-region-parser path/to/0.0.region.bin
+# Parse single file (writes -2.-3.region.json in current directory)
+hytale-region-parser chunks/-2.-3.region.bin
 
-# Save JSON to file
+# Parse a "chunks" folder (writes <worldname>.json in current directory)
+hytale-region-parser path/to/worldname/chunks/
+
+# Parse a universe folder (writes <worldname>.json for each world in current directory)
+hytale-region-parser path/to/universe/worlds/
+
+# Parse a flat folder of region files (writes regions.json in current directory)
+hytale-region-parser path/to/region_files/
+
+# Output to stdout instead of file
+hytale-region-parser path/to/0.0.region.bin --stdout
+
+# Specify custom output file
 hytale-region-parser path/to/0.0.region.bin -o output.json
 
 # Compact JSON (no indentation)
 hytale-region-parser path/to/0.0.region.bin --compact
 
-# Summary mode - show all unique blocks and components (legacy text output)
-hytale-region-parser path/to/0.0.region.bin --summary
-
-# Detailed mode - show BSON structure for debugging (legacy text output)
-hytale-region-parser path/to/0.0.region.bin --detailed
+# Suppress progress messages
+hytale-region-parser path/to/chunks/ -q
 ```
 
 ### Python API
@@ -131,21 +141,40 @@ The default output is JSON with world coordinates as keys:
 
 The coordinates are in world space (`chunk_x * 32 + local_x`, etc.).
 
-## Legacy Usage
+## Folder Processing
 
-The original script is still available for standalone use:
+The CLI supports three folder structures:
 
+All output files are written to the **current working directory** where the command is executed.
+
+### Single File
 ```bash
-# Text output modes
-python parse_region.py chunks/0.0.region.bin --summary
-python parse_region.py chunks/0.0.region.bin --detailed
+hytale-region-parser chunks/-2.-3.region.bin
+# Output: ./-2.-3.region.json
 ```
 
-The `--summary` mode outputs:
-- Total unique block types with occurrence counts
-- Blocks grouped by category
-- Item container locations and contents
-- Block component types and positions
+### Chunks Folder
+When pointing to a folder named "chunks", the parent folder is used as the world name:
+```bash
+hytale-region-parser path/to/default/chunks/
+# Output: ./default.json (merges all region files)
+```
+
+### Universe Folder
+When pointing to a folder containing world subfolders with "chunks" directories:
+```bash
+hytale-region-parser path/to/universe/worlds/
+# Output: ./world1.json
+#         ./world2.json
+#         (one JSON file per world)
+```
+
+### Flat Folder
+Any other folder containing `.region.bin` files:
+```bash
+hytale-region-parser path/to/region_files/
+# Output: ./regions.json (merges all region files)
+```
 
 ## Data Models
 
