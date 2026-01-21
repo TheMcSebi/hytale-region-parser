@@ -2,11 +2,14 @@
 BSON Parser for Hytale's Codec Format
 
 This module provides a parser for BSON documents used by Hytale's codec system.
+Uses the bson library for parsing.
 """
 
 import struct
 from enum import IntEnum
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+import bson
 
 
 class BsonType(IntEnum):
@@ -34,8 +37,37 @@ class BsonType(IntEnum):
     MAX_KEY = 0x7F
 
 
+def _convert_bson_types(obj: Any) -> Any:
+    """
+    Convert bson library types to standard Python types for JSON serialization.
+    
+    The bson library may return special types like ObjectId, datetime, etc.
+    This function converts them to JSON-serializable types.
+    """
+    if obj is None:
+        return None
+    elif isinstance(obj, dict):
+        return {k: _convert_bson_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_convert_bson_types(item) for item in obj]
+    elif isinstance(obj, bytes):
+        # Return as hex string for JSON compatibility
+        return obj.hex()
+    elif isinstance(obj, bson.ObjectId):
+        return str(obj)
+    elif hasattr(obj, 'isoformat'):  # datetime
+        return obj.isoformat()
+    else:
+        return obj
+
+
 class BsonParser:
-    """Parser for BSON documents used by Hytale's codec system"""
+    """
+    Parser for BSON documents used by Hytale's codec system.
+    
+    This class wraps the bson library and provides additional utility methods
+    for reading raw bytes when needed.
+    """
     
     def __init__(self, data: bytes):
         self.data = data
@@ -113,66 +145,33 @@ class BsonParser:
         return subtype, data
     
     def read_document(self) -> Dict[str, Any]:
-        """Read a BSON document"""
-        start_pos = self.pos
-        doc_size = self.read_int32()
+        """Read a BSON document using the bson library"""
+        # Get document size from current position
+        if self.remaining() < 4:
+            raise ValueError("Not enough data for BSON document")
         
-        result = {}
-        while self.pos < start_pos + doc_size - 1:
-            element_type = self.read_byte()
-            if element_type == 0:
-                break
-                
-            name = self.read_cstring()
-            value = self.read_element(element_type)
-            result[name] = value
+        doc_size = struct.unpack('<i', self.data[self.pos:self.pos + 4])[0]
         
-        # Read final null byte
-        if self.pos < start_pos + doc_size:
-            self.pos = start_pos + doc_size
-            
-        return result
+        if self.remaining() < doc_size:
+            raise ValueError(f"Document size {doc_size} exceeds remaining data {self.remaining()}")
+        
+        # Extract the document bytes
+        doc_bytes = self.data[self.pos:self.pos + doc_size]
+        self.pos += doc_size
+        
+        # Parse using bson library
+        result = bson.loads(doc_bytes)
+        
+        # Convert any special types to JSON-serializable types
+        return _convert_bson_types(result)
     
     def read_array(self) -> List[Any]:
         """Read a BSON array"""
         doc = self.read_document()
         # BSON arrays are documents with string indices "0", "1", "2", ...
-        return [doc[str(i)] for i in range(len(doc))]
-    
-    def read_element(self, element_type: int) -> Any:
-        """Read a BSON element value based on type"""
-        if element_type == BsonType.DOUBLE:
-            return self.read_double()
-        elif element_type == BsonType.STRING:
-            return self.read_string()
-        elif element_type == BsonType.DOCUMENT:
-            return self.read_document()
-        elif element_type == BsonType.ARRAY:
-            return self.read_array()
-        elif element_type == BsonType.BINARY:
-            return self.read_binary()
-        elif element_type == BsonType.BOOLEAN:
-            return self.read_byte() != 0
-        elif element_type == BsonType.NULL:
-            return None
-        elif element_type == BsonType.INT32:
-            return self.read_int32()
-        elif element_type == BsonType.INT64:
-            return self.read_int64()
-        elif element_type == BsonType.DATETIME:
-            return self.read_int64()  # milliseconds since epoch
-        elif element_type == BsonType.TIMESTAMP:
-            return self.read_int64()
-        elif element_type == BsonType.OBJECT_ID:
-            return self.read_bytes(12).hex()
-        elif element_type == BsonType.UNDEFINED:
-            return None
-        elif element_type == BsonType.REGEX:
-            pattern = self.read_cstring()
-            options = self.read_cstring()
-            return {'pattern': pattern, 'options': options}
-        else:
-            raise ValueError(f"Unknown BSON type: {element_type:#x}")
+        if isinstance(doc, dict):
+            return [doc[str(i)] for i in range(len(doc))]
+        return doc
     
     def parse(self) -> Dict[str, Any]:
         """Parse the entire BSON document"""
