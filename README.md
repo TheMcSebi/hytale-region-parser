@@ -12,8 +12,6 @@ This tool parses Hytale world region files to extract and analyze chunk data, in
 
 The code is mostly written by letting Claude Sonnet and Opus analyze the HytaleServer.jar's decompiled code and reimplementing the relevant parts in Python. I mainly wrote this because I wanted to learn about ore distribution, but this might serve others as a starter, too.
 
-There is still a bug regarding parsed entity names, that I haven't been able to figure out.
-
 ## Features
 
 - Parse IndexedStorageFile format (`.region.bin` files)
