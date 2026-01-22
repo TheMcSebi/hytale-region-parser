@@ -5,7 +5,7 @@ Example: Full Block Export with Positions
 This example demonstrates how to export all block positions from a region file
 to a JSON file. This includes the exact world coordinates of every block.
 
-WARNING: This can generate very large files (100s of MB) for densely populated regions!
+WARNING: This can generate very large files for densely populated regions! For a 30MB binary file the json output in my test was over 2.1GB of json and took about 10 minutes to finish. Use with caution.
 """
 
 import json
