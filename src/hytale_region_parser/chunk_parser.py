@@ -6,7 +6,7 @@ Parser for chunk data in Hytale's custom codec format (BSON-based).
 
 import re
 import struct
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from .bson_parser import BsonParser
 from .models import (
@@ -20,37 +20,37 @@ from .models import (
 
 class ChunkDataParser:
     """Parser for chunk data in Hytale's custom codec format (BSON-based)"""
-    
+
     # Known component types in chunk data
     KNOWN_COMPONENTS = {
         'WorldChunk', 'BlockChunk', 'BlockComponentChunk', 'BlockComponents',
         'ChunkColumn', 'ChunkSection', 'EntityChunk', 'EnvironmentChunk',
         'Block', 'BlockPhysics', 'FluidSection', 'Fluid'
     }
-    
+
     # Known block state types
     KNOWN_BLOCK_STATES = {
         'ItemContainerState', 'SignState', 'BedState', 'DoorState',
         'TrapDoorState', 'FenceGateState', 'LeverState', 'ButtonState',
         'PressurePlateState', 'TorchState', 'LampState', 'BellState'
     }
-    
+
     # Block name pattern: Category_SubCategory_Details (e.g., Rock_Stone_Mossy)
     BLOCK_NAME_PATTERN = re.compile(
         r'^([A-Z][a-z]+)_([A-Z][a-z][a-z0-9]*)(?:_[A-Z][a-z][a-z0-9]*)*$'
     )
-    
+
     # Valid block name prefixes
     VALID_PREFIXES = {
-        'Rock_', 'Soil_', 'Plant_', 'Wood_', 'Ore_', 'Furniture_', 
-        'Rubble_', 'Metal_', 'Stone_', 'Grass_', 'Tree_', 'Water_', 
-        'Lava_', 'Ice_', 'Sand_', 'Brick_', 'Glass_', 'Cloth_', 
+        'Rock_', 'Soil_', 'Plant_', 'Wood_', 'Ore_', 'Furniture_',
+        'Rubble_', 'Metal_', 'Stone_', 'Grass_', 'Tree_', 'Water_',
+        'Lava_', 'Ice_', 'Sand_', 'Brick_', 'Glass_', 'Cloth_',
         'Roof_', 'Survival_', 'Structure_', 'Decor_', 'Light_',
         'Fence_', 'Wall_', 'Floor_', 'Stair_', 'Door_', 'Window_',
         'Chest_', 'Barrel_', 'Crate_', 'Tool_', 'Weapon_',
         'Crystal_', 'Coral_', 'Seaweed_', 'Shell_', 'Kelp_'
     }
-    
+
     def __init__(self, data: bytes):
         """
         Initialize the chunk data parser.
@@ -60,7 +60,7 @@ class ChunkDataParser:
         """
         self.data = data
         self.pos = 0
-        
+
     def read_int(self) -> int:
         """Read a 4-byte big-endian integer"""
         if self.pos + 4 > len(self.data):
@@ -68,7 +68,7 @@ class ChunkDataParser:
         value = struct.unpack('>I', self.data[self.pos:self.pos+4])[0]
         self.pos += 4
         return value
-    
+
     def read_int_le(self) -> int:
         """Read a 4-byte little-endian integer"""
         if self.pos + 4 > len(self.data):
@@ -76,7 +76,7 @@ class ChunkDataParser:
         value = struct.unpack('<i', self.data[self.pos:self.pos+4])[0]
         self.pos += 4
         return value
-    
+
     def read_string(self) -> str:
         """Read a length-prefixed string (big-endian length)"""
         length = self.read_int()
@@ -84,11 +84,11 @@ class ChunkDataParser:
             raise ValueError(f"Invalid string length: {length}")
         if self.pos + length > len(self.data):
             raise ValueError("Not enough data to read string")
-        
+
         string = self.data[self.pos:self.pos+length].decode('utf-8', errors='replace')
         self.pos += length
         return string
-    
+
     def read_byte(self) -> int:
         """Read a single byte"""
         if self.pos >= len(self.data):
@@ -96,7 +96,7 @@ class ChunkDataParser:
         value = self.data[self.pos]
         self.pos += 1
         return value
-    
+
     def read_bytes(self, count: int) -> bytes:
         """Read a specified number of bytes"""
         if self.pos + count > len(self.data):
@@ -104,7 +104,7 @@ class ChunkDataParser:
         value = self.data[self.pos:self.pos+count]
         self.pos += count
         return value
-    
+
     def read_short(self) -> int:
         """Read a 2-byte big-endian short"""
         if self.pos + 2 > len(self.data):
@@ -112,7 +112,7 @@ class ChunkDataParser:
         value = struct.unpack('>H', self.data[self.pos:self.pos+2])[0]
         self.pos += 2
         return value
-    
+
     def read_short_le(self) -> int:
         """Read a 2-byte little-endian short"""
         if self.pos + 2 > len(self.data):
@@ -120,15 +120,15 @@ class ChunkDataParser:
         value = struct.unpack('<h', self.data[self.pos:self.pos+2])[0]
         self.pos += 2
         return value
-    
+
     def skip_bytes(self, count: int) -> None:
         """Skip a specified number of bytes"""
         self.pos += count
-    
+
     def remaining(self) -> int:
         """Return number of bytes remaining"""
         return len(self.data) - self.pos
-    
+
     def try_parse_bson(self) -> Optional[Dict[str, Any]]:
         """Try to parse the data as a BSON document"""
         try:
@@ -136,7 +136,7 @@ class ChunkDataParser:
             return parser.parse()
         except Exception:
             return None
-    
+
     @staticmethod
     def parse_block_section_data(data_hex: str, section_y: int = 0) -> ChunkSectionData:
         """
@@ -161,65 +161,65 @@ class ChunkDataParser:
             ChunkSectionData with parsed palette and block counts
         """
         section = ChunkSectionData(section_y=section_y)
-        
+
         if not data_hex:
             return section
-            
+
         try:
             data = bytes.fromhex(data_hex)
         except ValueError:
             return section
-            
+
         if len(data) < 7:  # Minimum: 4 + 1 + 2 = 7 bytes
             return section
-            
+
         pos = 0
-        
+
         # 4 bytes: Block migration version
         # migration_version = struct.unpack('>I', data[pos:pos+4])[0]
         pos += 4
-        
+
         # 1 byte: Palette type (0=Empty, 1=HalfByte, 2=Byte, 3=Short)
         palette_type = data[pos]
         pos += 1
         section.palette_type = palette_type
-        
+
         if palette_type == 0:  # Empty section
             return section
-            
+
         # 2 bytes: Palette entry count
         if pos + 2 > len(data):
             return section
         palette_count = struct.unpack('>H', data[pos:pos+2])[0]
         pos += 2
-        
+
         # Parse palette entries
         palette: List[BlockPaletteEntry] = []
         block_counts: Dict[str, int] = {}
-        
+
         for _ in range(palette_count):
             if pos >= len(data):
                 break
-                
+
             # 1 byte: internal ID
             internal_id = data[pos]
             pos += 1
-            
+
             # 2 bytes: string length
             if pos + 2 > len(data):
                 break
             str_len = struct.unpack('>H', data[pos:pos+2])[0]
             pos += 2
-            
+
             if str_len > 500:  # Sanity check
                 break
-                
+
             # N bytes: block name
             if pos + str_len > len(data):
                 break
             name = data[pos:pos+str_len].decode('utf-8', errors='replace')
             pos += str_len
-            
+
             # 2 bytes: block count (signed short)
             if pos + 2 > len(data):
                 # Still add the entry without count
@@ -228,48 +228,48 @@ class ChunkDataParser:
                 break
             count = struct.unpack('>h', data[pos:pos+2])[0]
             pos += 2
-            
+
             entry = BlockPaletteEntry(internal_id=internal_id, name=name, count=count)
             palette.append(entry)
-            
+
             # Aggregate counts by block name (skip Empty blocks)
             if name and name != "Empty":
                 block_counts[name] = block_counts.get(name, 0) + max(0, count)
-        
+
         section.block_palette = palette
         section.block_counts = block_counts
-        
+
         # Store remaining block indices
         if pos < len(data):
             section.block_indices = data[pos:]
-            
+
         return section
-    
+
     def extract_block_names_from_bytes(self) -> Set[str]:
         """Extract block names using pattern matching on binary data"""
         block_names: Set[str] = set()
-        
+
         # Decode with replacement character for invalid sequences
         try:
             text = self.data.decode('utf-8', errors='replace')
         except Exception:
             return block_names
-        
+
         # Pattern: Capital + lowercase letters, then (_Capital + lowercase/digits)+
         pattern = r'(?<![A-Za-z0-9_])([A-Z][a-z]+(?:_[A-Z][a-z][a-z0-9]*)+)(?![a-z])'
-        
+
         for match in re.finditer(pattern, text):
             name = match.group(1)
-            
+
             # Skip if contains replacement character
             if '\ufffd' in name:
                 continue
-                
+
             # Check if starts with valid prefix
             has_valid_prefix = any(name.startswith(prefix) for prefix in self.VALID_PREFIXES)
             if not has_valid_prefix:
                 continue
-            
+
             # Verify each segment is properly formed
             segments = name.split('_')
             valid = True
@@ -284,35 +284,35 @@ class ChunkDataParser:
                 if not any(c.islower() for c in rest):
                     valid = False
                     break
-            
+
             if valid and len(name) <= 80:
                 block_names.add(name)
-        
+
         return block_names
-    
+
     def parse_block_components(self, doc: Dict[str, Any]) -> List[BlockComponent]:
         """Parse BlockComponentChunk/BlockComponents from BSON document"""
         components = []
-        
+
         # Look for BlockComponents in the document
         block_components = doc.get('BlockComponents', {})
-        
+
         if isinstance(block_components, dict):
             for index_str, component_data in block_components.items():
                 try:
                     index = int(index_str)
-                    
+
                     # Calculate position from index
                     # Index = x + y*32 + z*32*32 for a section
                     x = index % 32
                     y = (index // 32) % 32
                     z = index // (32 * 32)
-                    
+
                     # Determine component type
                     comp_type = "Unknown"
                     if isinstance(component_data, dict):
                         comp_type = component_data.get('Type', 'Unknown')
-                        
+
                     component = BlockComponent(
                         index=index,
                         position=(x, y, z),
@@ -322,39 +322,39 @@ class ChunkDataParser:
                     components.append(component)
                 except (ValueError, TypeError):
                     continue
-        
+
         return components
-    
+
     def parse_item_containers(self, doc: Dict[str, Any]) -> List[ItemContainerData]:
         """Parse ItemContainer data from BSON document"""
         containers: List[ItemContainerData] = []
-        
+
         # Search recursively for ItemContainer data
         def find_containers(obj: Any, path: str = "") -> List[ItemContainerData]:
             result: List[ItemContainerData] = []
-            
+
             if isinstance(obj, dict):
                 # Check for container component (nested in Components > container)
                 inner_container = None
                 if 'Components' in obj and isinstance(obj['Components'], dict):
                     inner_container = obj['Components'].get('container')
-                
+
                 # Check if this is an ItemContainerState or has ItemContainer directly
                 container_obj = inner_container or obj
-                
+
                 if container_obj and isinstance(container_obj, dict):
-                    if (container_obj.get('Type') == 'ItemContainerState' or 
+                    if (container_obj.get('Type') == 'ItemContainerState' or
                         'ItemContainer' in container_obj):
-                        
+
                         pos = container_obj.get('Position', {})
                         if isinstance(pos, dict):
                             position = (pos.get('X', 0), pos.get('Y', 0), pos.get('Z', 0))
                         else:
                             position = (0, 0, 0)
-                        
+
                         item_container = container_obj.get('ItemContainer', {})
                         capacity = item_container.get('Capacity', 0) if isinstance(item_container, dict) else 0
-                        
+
                         container = ItemContainerData(
                             position=position,
                             capacity=capacity,
@@ -363,7 +363,7 @@ class ChunkDataParser:
                             who_placed_uuid=container_obj.get('WhoPlacedUuid'),
                             placed_by_interaction=container_obj.get('PlacedByInteraction', False)
                         )
-                        
+
                         # Parse items if present
                         if isinstance(item_container, dict):
                             items = item_container.get('Items', {})
@@ -372,22 +372,22 @@ class ChunkDataParser:
                                 container.items = list(items.values())
                             elif isinstance(items, list):
                                 container.items = items
-                        
+
                         result.append(container)
-                
+
                 # Recurse into dict values (but avoid double-counting)
                 for key, value in obj.items():
                     if key not in ('Components',):  # Don't recurse into nested components we already handled
                         result.extend(find_containers(value, f"{path}.{key}"))
-                    
+
             elif isinstance(obj, list):
                 for i, item in enumerate(obj):
                     result.extend(find_containers(item, f"{path}[{i}]"))
-            
+
             return result
-        
+
         return find_containers(doc)
-    
+
     def parse(self) -> ParsedChunkData:
         """
         Parse chunk data and extract all components.
@@ -396,35 +396,35 @@ class ChunkDataParser:
             ParsedChunkData object containing all parsed information
         """
         result = ParsedChunkData()
-        
+
         # First try BSON parsing
         bson_doc = self.try_parse_bson()
-        
+
         if bson_doc:
             result.raw_components = bson_doc
-            
+
             # Extract version if present
             result.version = bson_doc.get('Version', 0)
-            
+
             # Navigate to the Components section
             components = bson_doc.get('Components', {})
-            
+
             # Parse block components from BlockComponentChunk
             block_comp_chunk = components.get('BlockComponentChunk', {})
             block_components = block_comp_chunk.get('BlockComponents', {})
-            
+
             for index_str, component_data in block_components.items():
                 try:
                     index = int(index_str)
-                    
+
                     # Calculate position from index (within a 32x32 column)
                     x = index % 32
                     y = (index // 32) % 320  # Height can be up to 320
                     z = (index // (32 * 320))
-                    
+
                     # Get the inner Components dict
                     inner_comps = component_data.get('Components', {}) if isinstance(component_data, dict) else {}
-                    
+
                     # Check for container
                     container_data = inner_comps.get('container')
                     if container_data and isinstance(container_data, dict):
@@ -433,10 +433,10 @@ class ChunkDataParser:
                             position = (pos.get('X', 0), pos.get('Y', 0), pos.get('Z', 0))
                         else:
                             position = (x, y, z)
-                        
+
                         item_container = container_data.get('ItemContainer', {})
                         capacity = item_container.get('Capacity', 0) if isinstance(item_container, dict) else 0
-                        
+
                         container = ItemContainerData(
                             position=position,
                             capacity=capacity,
@@ -445,7 +445,7 @@ class ChunkDataParser:
                             who_placed_uuid=container_data.get('WhoPlacedUuid'),
                             placed_by_interaction=container_data.get('PlacedByInteraction', False)
                         )
-                        
+
                         # Parse items if present
                         if isinstance(item_container, dict):
                             items = item_container.get('Items', {})
@@ -453,9 +453,9 @@ class ChunkDataParser:
                                 container.items = list(items.values())
                             elif isinstance(items, list):
                                 container.items = items
-                        
+
                         result.containers.append(container)
-                    
+
                     # Check for other component types
                     for comp_name, comp_data in inner_comps.items():
                         component = BlockComponent(
@@ -465,17 +465,17 @@ class ChunkDataParser:
                             data=comp_data if isinstance(comp_data, dict) else {}
                         )
                         result.block_components.append(component)
-                        
+
                 except (ValueError, TypeError):
                     continue
-            
+
             # Extract entities if present
             entity_chunk = components.get('EntityChunk', {})
             if isinstance(entity_chunk, dict):
                 entities = entity_chunk.get('Entities', [])
                 if isinstance(entities, list):
                     result.entities = entities
-            
+
             # Parse ChunkColumn sections for block data
             chunk_column = components.get('ChunkColumn', {})
             if isinstance(chunk_column, dict):
@@ -484,11 +484,11 @@ class ChunkDataParser:
                     for section_idx, section_data in enumerate(sections_list):
                         if not isinstance(section_data, dict):
                             continue
-                        
+
                         section_comps = section_data.get('Components', {})
                         if not isinstance(section_comps, dict):
                             continue
-                        
+
                         # Get Block component
                         block_comp = section_comps.get('Block', {})
                         if isinstance(block_comp, dict):
@@ -497,17 +497,17 @@ class ChunkDataParser:
                                 # Parse the block section data
                                 section = self.parse_block_section_data(data_hex, section_y=section_idx)
                                 result.sections.append(section)
-                                
+
                                 # Aggregate block names from palette
                                 for entry in section.block_palette:
                                     if entry.name and entry.name != "Empty":
                                         result.block_names.add(entry.name)
-        
+
         # Also extract block names from raw bytes (for palette data) - backup method
         result.block_names.update(self.extract_block_names_from_bytes())
-        
+
         return result
-    
+
     def parse_block_section(self, section_index: int) -> Optional[ChunkSectionData]:
         """
         Parse a single block section.
@@ -519,11 +519,11 @@ class ChunkDataParser:
             ChunkSectionData if successful, None otherwise
         """
         section = ChunkSectionData(section_y=section_index)
-        
+
         try:
             # Read palette type
             palette_type = self.read_byte()
-            
+
             # Read block palette based on type
             if palette_type == 0:  # Empty
                 pass
@@ -537,8 +537,8 @@ class ChunkDataParser:
                     str_len = self.read_short()
                     block_name = self.read_bytes(str_len).decode('utf-8', errors='replace')
                     section.block_palette.append(block_name)
-            
+
         except Exception:
             pass
-        
+
         return section

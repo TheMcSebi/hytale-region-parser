@@ -40,7 +40,7 @@ pip install hytale-region-parser
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/hytale-region-parser.git
+git clone https://github.com/TheMcSebi/hytale-region-parser.git
 cd hytale-region-parser
 pip install -e .
 ```

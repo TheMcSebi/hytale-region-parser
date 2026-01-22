@@ -5,7 +5,7 @@ This module contains dataclasses representing the various data structures
 found in Hytale region files.
 """
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 
@@ -18,7 +18,7 @@ class BlockComponent:
     data: Dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass 
+@dataclass
 class ItemContainerData:
     """Represents an item container (chest, etc.)"""
     position: Tuple[int, int, int]
@@ -77,7 +77,7 @@ class ParsedChunkData:
             Dictionary with position keys "x,y,z" mapping to block data
         """
         result: Dict[str, Any] = {}
-        
+
         # Add containers with their positions as keys
         for container in self.containers:
             x, y, z = container.position
@@ -91,7 +91,7 @@ class ParsedChunkData:
                 "who_placed_uuid": container.who_placed_uuid,
                 "placed_by_interaction": container.placed_by_interaction,
             }
-        
+
         # Add block components with their positions as keys
         for component in self.block_components:
             x, y, z = component.position
@@ -108,7 +108,7 @@ class ParsedChunkData:
                         component.component_type: component.data
                     }
                 }
-        
+
         return result
 
 
@@ -118,7 +118,7 @@ class RegionData:
     region_x: int = 0
     region_z: int = 0
     blocks: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert region data to a JSON-serializable dictionary.

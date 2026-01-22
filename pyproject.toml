@@ -55,12 +55,11 @@ dev = [
 hytale-region-parser = "hytale_region_parser.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/hytale-region-parser"
-Documentation = "https://github.com/yourusername/hytale-region-parser#readme"
-Repository = "https://github.com/yourusername/hytale-region-parser.git"
-Issues = "https://github.com/yourusername/hytale-region-parser/issues"
-Changelog = "https://github.com/yourusername/hytale-region-parser/blob/main/CHANGELOG.md"
-
+Homepage = "https://github.com/TheMcSebi/hytale-region-parser"
+Documentation = "https://github.com/TheMcSebi/hytale-region-parser#readme"
+Repository = "https://github.com/TheMcSebi/hytale-region-parser.git"
+Issues = "https://github.com/TheMcSebi/hytale-region-parser/issues"
+Changelog = "https://github.com/TheMcSebi/hytale-region-parser/blob/main/CHANGELOG.md"
 [tool.hatch.build.targets.sdist]
 include = [
     "/src",

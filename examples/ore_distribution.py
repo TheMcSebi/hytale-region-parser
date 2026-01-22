@@ -290,11 +290,11 @@ def main():
     chunks_folder = Path(appdata + r"\Hytale\UserData\Saves\Server\universe\worlds\default\chunks")
     
     # Center coordinates for the analysis
-    center_x = 2000
-    center_z = 2000
+    center_x = 450
+    center_z = -200
     
     # Area size in chunks (3 = 3x3 = 9 chunks = 96x96 blocks area)
-    area_size = 3
+    area_size = 9
     
     if not chunks_folder.exists():
         print(f"Error: Chunks folder not found at {chunks_folder}")
