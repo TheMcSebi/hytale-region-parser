@@ -10,7 +10,9 @@ A Python library for parsing Hytale `.region.bin` files (IndexedStorageFile form
 
 This tool parses Hytale world region files to extract and analyze chunk data, including block information, components, containers, and entities. It implements a custom BSON parser compatible with Hytale's codec system and handles zstandard-compressed data blobs.
 
-The code is mostly written by letting Claude Sonnet and Opus analyze the HytaleServer.jar's decompiled code and reimplementing the relevant parts in Python. I mainly wrote this because I wanted to learn about ore distribution, but this might serve others as a starter, too.
+The code is mostly written by letting Claude Sonnet and Opus analyze the HytaleServer.jar's decompiled code and reimplementing the relevant parts in Python. I mainly wrote this because I wanted to learn about ore distribution, but it quickly evolved into a library.
+
+Feel free to explore the [examples](examples/README.md) for common use cases and report bugs or request features on the [GitHub Issues page](https://github.com/TheMcSebi/hytale-region-parser/issues).
 
 ## Features
 
