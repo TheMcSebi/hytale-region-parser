@@ -5,14 +5,27 @@ Example: Ore Distribution Analysis
 This example analyzes the distribution of all Ore_* blocks within a 3x3 area
 of chunks around specified world coordinates. It displays statistics about
 ore occurrence by type and Y-level.
+
+Install requirements with:
+pip install numpy plotly
 """
 
 import math
 from collections import defaultdict
 import os
 from pathlib import Path
+
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from typing import Dict, List, Tuple, Any
 from hytale_region_parser import RegionFileParser
+
+
+def sanitize_ore_name(name: str) -> str:
+    """Strip rock type suffix: Ore_Gold_Volcanic -> Ore_Gold"""
+    parts = name.split("_")
+    return f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else name
 
 
 def world_to_chunk_coords(world_x: int, world_z: int) -> Tuple[int, int]:
@@ -39,7 +52,8 @@ def analyze_ore_distribution(
     chunks_folder: Path,
     center_x: int,
     center_z: int,
-    area_size: int = 3
+    area_size: int = 3,
+    sanitize_names: bool = False
 ) -> Dict[str, Any]:
     """
     Analyze ore distribution in a square area of chunks around a center point.
@@ -49,6 +63,7 @@ def analyze_ore_distribution(
         center_x: World X coordinate of the center
         center_z: World Z coordinate of the center
         area_size: Size of the square area in chunks (e.g., 3 for 3x3)
+        sanitize_names: Strip rock type from ore name
     
     Returns:
         Dictionary containing ore distribution statistics
@@ -106,6 +121,8 @@ def analyze_ore_distribution(
                     # Check block counts for ores
                     for block_name, count in section.block_counts.items():
                         if block_name and block_name.startswith("Ore_"):
+                            if sanitize_names:
+                                block_name = sanitize_ore_name(block_name)
                             ore_counts[block_name] += count
                     
                     # If we have block indices, get exact positions
@@ -131,6 +148,8 @@ def analyze_ore_distribution(
                                     
                                     name = id_to_name.get(internal_id, "")
                                     if name.startswith("Ore_"):
+                                        if sanitize_names:
+                                            name = sanitize_ore_name(name)
                                         local_x = block_idx % 32
                                         local_z = (block_idx // 32) % 32
                                         local_y = block_idx // (32 * 32)
@@ -148,6 +167,8 @@ def analyze_ore_distribution(
                                     break
                                 name = id_to_name.get(internal_id, "")
                                 if name.startswith("Ore_"):
+                                    if sanitize_names:
+                                        name = sanitize_ore_name(name)
                                     local_x = block_idx % 32
                                     local_z = (block_idx // 32) % 32
                                     local_y = block_idx // (32 * 32)
@@ -168,6 +189,8 @@ def analyze_ore_distribution(
                                 internal_id = struct.unpack('>H', indices[i:i+2])[0]
                                 name = id_to_name.get(internal_id, "")
                                 if name.startswith("Ore_"):
+                                    if sanitize_names:
+                                        name = sanitize_ore_name(name)
                                     local_x = block_idx % 32
                                     local_z = (block_idx // 32) % 32
                                     local_y = block_idx // (32 * 32)
@@ -257,19 +280,21 @@ def print_ore_report(results: Dict[str, Any]) -> None:
         print(f"  Y range: {min_y} to {max_y}")
         print(f"  Average Y: {avg_y:.1f}")
         print(f"  Peak Y: {peak_y} (most common level)")
-        
-        # Create a simple histogram
-        # Group into Y ranges of 16 blocks
-        y_ranges = defaultdict(int)
-        for y, count in y_data.items():
-            range_start = (y // 16) * 16
-            y_ranges[range_start] += count
+
+        # Create histogram using numpy
+        # Expand y_data into array of Y values (weighted by count)
+        y_values = np.repeat(list(y_data.keys()), list(y_data.values()))
+
+        # Use numpy histogram with automatic bin detection (Freedman-Diaconis rule)
+        counts, bin_edges = np.histogram(y_values, bins='fd')
         
         print("  Distribution by Y-range:")
-        max_count = max(y_ranges.values()) if y_ranges else 1
-        for range_start in sorted(y_ranges.keys()):
-            range_end = range_start + 15
-            count = y_ranges[range_start]
+        max_count = counts.max() if len(counts) > 0 else 1
+        for i, count in enumerate(counts):
+            if count == 0:
+                continue
+            range_start = int(bin_edges[i])
+            range_end = int(bin_edges[i + 1]) - 1
             bar_length = int((count / max_count) * 30)
             bar = "█" * bar_length
             print(f"    Y {range_start:>4}-{range_end:<4}: {count:>6} {bar}")
@@ -284,17 +309,82 @@ def print_ore_report(results: Dict[str, Any]) -> None:
             print(f"  {i:>2}. {ore_name:<25} at ({x:>6}, {y:>3}, {z:>6})")
 
 
+def plot_ore_distribution(results: Dict[str, Any], output_path: Path) -> None:
+    """Create an interactive plotly chart of ore distribution by Y-level."""
+    ore_by_y = results["ore_by_y_level"]
+    ore_counts = results["ore_counts"]
+    
+    if not ore_counts:
+        print("No ore data to plot.")
+        return
+    
+    # Sort ores by total count (descending)
+    sorted_ores = sorted(ore_counts.items(), key=lambda x: -x[1])
+    
+    # Create figure with subplots - one row per ore type
+    num_ores = len(sorted_ores)
+    fig = make_subplots(
+        rows=num_ores, 
+        cols=1,
+        subplot_titles=[f"{name} (total: {count:,})" for name, count in sorted_ores],
+        vertical_spacing=0.05
+    )
+    
+    for idx, (ore_name, _) in enumerate(sorted_ores, start=1):
+        if ore_name not in ore_by_y:
+            continue
+        
+        y_data = ore_by_y[ore_name]
+        if not y_data:
+            continue
+        
+        # Sort by Y level for proper plotting
+        sorted_y_data = sorted(y_data.items())
+        y_levels = [y for y, _ in sorted_y_data]
+        counts = [c for _, c in sorted_y_data]
+        
+        # Add bar trace for this ore
+        fig.add_trace(
+            go.Bar(
+                x=y_levels,
+                y=counts,
+                name=ore_name,
+                marker_color=f"hsl({(idx * 360 // num_ores) % 360}, 70%, 50%)"
+            ),
+            row=idx,
+            col=1
+        )
+        
+        # Update axes labels
+        fig.update_xaxes(title_text="Y Level", row=idx, col=1)
+        fig.update_yaxes(title_text="Count", row=idx, col=1)
+    
+    # Update layout
+    fig.update_layout(
+        title_text=f"Ore Distribution by Y-Level (Center: {results['center']}, Area: {results['area_size']}x{results['area_size']} chunks)",
+        height=300 * num_ores,
+        showlegend=False
+    )
+    
+    # Save to HTML
+    fig.write_html(output_path)
+    print(f"\nPlot saved to: {output_path}")
+
+
 def main():
     # Configuration - update these paths!
     appdata = os.getenv('APPDATA')
     chunks_folder = Path(appdata + r"\Hytale\UserData\Saves\Server\universe\worlds\default\chunks")
     
     # Center coordinates for the analysis
-    center_x = 450
-    center_z = -200
+    center_x = 860
+    center_z = -1240
     
-    # Area size in chunks (3 = 3x3 = 9 chunks = 96x96 blocks area)
-    area_size = 9
+    # Area size in chunks (3 = 3x3 = 9 chunks = 96x96 blocks area, 9 = 9x9 = 81 chunks = 288x288 blocks area)
+    area_size = 4
+    
+    # Sanitize names, removing the containing subtype. E.g. "Ore_Gold_Volcanic" becomes "Ore_Gold"
+    sanitize_names = True
     
     if not chunks_folder.exists():
         print(f"Error: Chunks folder not found at {chunks_folder}")
@@ -307,10 +397,14 @@ def main():
     print(f"Chunks folder: {chunks_folder}")
     
     # Run analysis
-    results = analyze_ore_distribution(chunks_folder, center_x, center_z, area_size)
+    results = analyze_ore_distribution(chunks_folder, center_x, center_z, area_size, sanitize_names)
     
     # Print report
     print_ore_report(results)
+    
+    # Generate interactive plot
+    output_html = Path(__file__).parent / "ore_distribution.html"
+    plot_ore_distribution(results, output_html)
     
     print()
     print("Done!")
