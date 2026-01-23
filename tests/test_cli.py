@@ -6,7 +6,10 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from hytale_region_parser.cli import main, detect_folder_structure, get_output_filename_for_single_file
+from hytale_region_parser.cli import (
+    main, detect_folder_structure, get_output_filename_for_single_file,
+    normalize_filter_pattern, matches_block_filter, filter_block_summary, filter_blocks_data
+)
 from hytale_region_parser.models import ItemContainerData, ParsedChunkData
 
 
@@ -32,7 +35,7 @@ class TestCLI:
         
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert '0.1.0' in captured.out
+        assert "0.1.1" in captured.out
 
     def test_file_not_found(self, capsys):
         """Test error when file doesn't exist."""
@@ -313,3 +316,81 @@ class TestFolderProcessing:
         assert parsed == {"folder": "data"}
         # No JSON file should be created
         assert not (output_dir / "regions.json").exists()
+
+
+class TestBlockFilter:
+    """Tests for block filter functionality."""
+
+    def test_normalize_filter_pattern_with_caret_escape(self):
+        """Test that ^* is converted to * for Windows CMD compatibility."""
+        assert normalize_filter_pattern("Ore_^*") == "Ore_*"
+        assert normalize_filter_pattern("^*Stone^*") == "*Stone*"
+        assert normalize_filter_pattern("Block_^?_Name") == "Block_?_Name"
+
+    def test_normalize_filter_pattern_without_escape(self):
+        """Test that patterns without escapes are unchanged."""
+        assert normalize_filter_pattern("Ore_*") == "Ore_*"
+        assert normalize_filter_pattern("*Stone*") == "*Stone*"
+        assert normalize_filter_pattern("ExactName") == "ExactName"
+
+    def test_matches_block_filter_wildcard(self):
+        """Test wildcard matching."""
+        assert matches_block_filter("Ore_Iron", "Ore_*") is True
+        assert matches_block_filter("Ore_Gold", "Ore_*") is True
+        assert matches_block_filter("Stone_Block", "Ore_*") is False
+        assert matches_block_filter("Iron_Ore", "*_Ore") is True
+
+    def test_matches_block_filter_question_mark(self):
+        """Test single character wildcard matching."""
+        assert matches_block_filter("Ore_A", "Ore_?") is True
+        assert matches_block_filter("Ore_AB", "Ore_?") is False
+        assert matches_block_filter("Ore_AB", "Ore_??") is True
+
+    def test_matches_block_filter_exact(self):
+        """Test exact name matching."""
+        assert matches_block_filter("Stone", "Stone") is True
+        assert matches_block_filter("Stone_Block", "Stone") is False
+
+    def test_filter_block_summary(self):
+        """Test filtering block summary dictionary."""
+        summary = {
+            "Ore_Iron": 100,
+            "Ore_Gold": 50,
+            "Stone": 1000,
+            "Dirt": 500
+        }
+        filtered = filter_block_summary(summary, "Ore_*")
+        assert filtered == {"Ore_Iron": 100, "Ore_Gold": 50}
+
+    def test_filter_blocks_data(self):
+        """Test filtering full blocks data."""
+        data = {
+            "metadata": {
+                "block_summary": {
+                    "Ore_Iron": 2,
+                    "Stone": 3
+                }
+            },
+            "blocks": {
+                "0,0,0": {"name": "Ore_Iron"},
+                "1,1,1": {"name": "Stone"},
+                "2,2,2": {"name": "Ore_Gold"},
+            }
+        }
+        filtered = filter_blocks_data(data, "Ore_*")
+        assert filtered["metadata"]["block_summary"] == {"Ore_Iron": 2}
+        assert len(filtered["blocks"]) == 2
+        assert "0,0,0" in filtered["blocks"]
+        assert "2,2,2" in filtered["blocks"]
+        assert "1,1,1" not in filtered["blocks"]
+
+    def test_filter_flag_in_help(self, capsys):
+        """Test that --filter flag appears in help."""
+        with pytest.raises(SystemExit):
+            with patch('sys.argv', ['hytale-region-parser', '--help']):
+                main()
+        
+        captured = capsys.readouterr()
+        assert '--filter' in captured.out
+        assert '-f' in captured.out
+        assert 'PATTERN' in captured.out

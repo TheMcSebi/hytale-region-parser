@@ -3,6 +3,7 @@ Command-line interface for Hytale Region Parser
 """
 
 import argparse
+import fnmatch
 import json
 import sys
 from pathlib import Path
@@ -10,6 +11,84 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from . import __version__
 from .region_parser import RegionFileParser
+
+
+def normalize_filter_pattern(pattern: str) -> str:
+    """
+    Normalize a filter pattern, handling Windows CMD escape sequences.
+    
+    On Windows CMD, * must be escaped as ^* to prevent shell expansion.
+    This function converts ^* back to * for fnmatch.
+    
+    Args:
+        pattern: The filter pattern (e.g., "Ore_^*" or "Ore_*")
+        
+    Returns:
+        Normalized pattern with ^* converted to *
+    """
+    return pattern.replace("^*", "*").replace("^?", "?")
+
+
+def matches_block_filter(block_name: str, pattern: str) -> bool:
+    """
+    Check if a block name matches the filter pattern.
+    
+    Uses fnmatch for glob-style pattern matching (* and ? wildcards).
+    
+    Args:
+        block_name: The block name to check
+        pattern: The fnmatch pattern (already normalized)
+        
+    Returns:
+        True if the block name matches the pattern
+    """
+    return fnmatch.fnmatch(block_name, pattern)
+
+
+def filter_block_summary(block_summary: Dict[str, int], pattern: str) -> Dict[str, int]:
+    """
+    Filter a block summary dictionary to only include matching blocks.
+    
+    Args:
+        block_summary: Dictionary mapping block names to counts
+        pattern: The fnmatch pattern to filter by
+        
+    Returns:
+        Filtered dictionary with only matching block names
+    """
+    return {
+        name: count
+        for name, count in block_summary.items()
+        if matches_block_filter(name, pattern)
+    }
+
+
+def filter_blocks_data(data: Dict[str, Any], pattern: str) -> Dict[str, Any]:
+    """
+    Filter a full blocks data dictionary to only include matching blocks.
+    
+    Args:
+        data: The full data dictionary from to_dict()
+        pattern: The fnmatch pattern to filter by
+        
+    Returns:
+        Filtered data dictionary
+    """
+    # Filter block_summary in metadata
+    if "metadata" in data and "block_summary" in data["metadata"]:
+        data["metadata"]["block_summary"] = filter_block_summary(
+            data["metadata"]["block_summary"], pattern
+        )
+    
+    # Filter blocks dictionary
+    if "blocks" in data:
+        data["blocks"] = {
+            pos: block_data
+            for pos, block_data in data["blocks"].items()
+            if "name" in block_data and matches_block_filter(block_data["name"], pattern)
+        }
+    
+    return data
 
 
 def find_region_files(folder: Path) -> List[Path]:
@@ -61,13 +140,20 @@ def parse_single_file(
     filepath: Path,
     indent: Optional[int] = 2,
     include_all_blocks: bool = True,
-    summary_only: bool = False
+    summary_only: bool = False,
+    block_filter: Optional[str] = None
 ) -> Dict[str, Any]:
     """Parse a single region file and return the data dictionary."""
     with RegionFileParser(filepath) as parser:
         if summary_only:
-            return parser.to_dict_summary_only()
-        return parser.to_dict(include_all_blocks=include_all_blocks)
+            data = parser.to_dict_summary_only()
+            if block_filter:
+                data["block_summary"] = filter_block_summary(data["block_summary"], block_filter)
+            return data
+        data = parser.to_dict(include_all_blocks=include_all_blocks)
+        if block_filter:
+            data = filter_blocks_data(data, block_filter)
+        return data
 
 
 def parse_multiple_files(
@@ -75,7 +161,8 @@ def parse_multiple_files(
     indent: Optional[int] = 2,
     quiet: bool = False,
     include_all_blocks: bool = True,
-    summary_only: bool = False
+    summary_only: bool = False,
+    block_filter: Optional[str] = None
 ) -> Dict[str, Any]:
     """Parse multiple region files and merge into a single dictionary."""
     if summary_only:
@@ -92,7 +179,8 @@ def parse_multiple_files(
                     data = parser.to_dict_summary_only()
                     total_chunks += data["metadata"]["chunk_count"]
                     for block_name, count in data["block_summary"].items():
-                        combined_summary[block_name] = combined_summary.get(block_name, 0) + count
+                        if not block_filter or matches_block_filter(block_name, block_filter):
+                            combined_summary[block_name] = combined_summary.get(block_name, 0) + count
                     combined_containers.extend(data.get("containers", []))
             except Exception as e:
                 print(f"Warning: Failed to parse {filepath}: {e}", file=sys.stderr)
@@ -120,7 +208,7 @@ def parse_multiple_files(
             if not quiet:
                 print(f"Parsing {filepath.name}...", file=sys.stderr)
             try:
-                file_data = parse_single_file(filepath, indent, include_all_blocks, summary_only=False)
+                file_data = parse_single_file(filepath, indent, include_all_blocks, summary_only=False, block_filter=block_filter)
                 result["metadata"]["total_chunks"] += file_data["metadata"]["chunk_count"]
                 # Merge block summary
                 for block_name, count in file_data["metadata"]["block_summary"].items():
@@ -207,6 +295,14 @@ Examples:
     )
 
     parser.add_argument(
+        '--filter', '-f',
+        type=str,
+        metavar='PATTERN',
+        help='Filter blocks by name pattern (fnmatch style: * and ? wildcards). '
+             'Use ^* to escape * on Windows CMD. Example: "Ore_*" or "Ore_^*" on CMD'
+    )
+
+    parser.add_argument(
         '--version', '-V',
         action='version',
         version=f'%(prog)s {__version__}'
@@ -223,12 +319,13 @@ Examples:
     cwd = Path.cwd()
     include_all_blocks = not args.no_blocks
     summary_only = args.summary_only
+    block_filter = normalize_filter_pattern(args.filter) if args.filter else None
 
     try:
         # Check if input is a file or directory
         if args.input_path.is_file():
             # Single file mode
-            data = parse_single_file(args.input_path, indent, include_all_blocks, summary_only)
+            data = parse_single_file(args.input_path, indent, include_all_blocks, summary_only, block_filter)
             json_output = json.dumps(data, indent=indent, default=str)
 
             if args.stdout:
@@ -257,7 +354,7 @@ Examples:
                     if not args.quiet:
                         print(f"\nProcessing world: {world_name} ({len(region_files)} files)", file=sys.stderr)
 
-                    data = parse_multiple_files(region_files, indent, args.quiet, include_all_blocks, summary_only)
+                    data = parse_multiple_files(region_files, indent, args.quiet, include_all_blocks, summary_only, block_filter)
                     json_output = json.dumps(data, indent=indent, default=str)
 
                     if args.stdout:
@@ -276,7 +373,7 @@ Examples:
                 if not args.quiet:
                     print(f"Processing world: {world_name} ({len(region_files)} files)", file=sys.stderr)
 
-                data = parse_multiple_files(region_files, indent, args.quiet, include_all_blocks, summary_only)
+                data = parse_multiple_files(region_files, indent, args.quiet, include_all_blocks, summary_only, block_filter)
                 json_output = json.dumps(data, indent=indent, default=str)
 
                 if args.stdout:
@@ -293,7 +390,7 @@ Examples:
                 if not args.quiet:
                     print(f"Processing {len(region_files)} files from {args.input_path.name}", file=sys.stderr)
 
-                data = parse_multiple_files(region_files, indent, args.quiet, include_all_blocks, summary_only)
+                data = parse_multiple_files(region_files, indent, args.quiet, include_all_blocks, summary_only, block_filter)
                 json_output = json.dumps(data, indent=indent, default=str)
 
                 if args.stdout:
