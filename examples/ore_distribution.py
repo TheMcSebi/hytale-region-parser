@@ -10,10 +10,12 @@ Install requirements with:
 pip install numpy plotly
 """
 
+import json
 import math
 from collections import defaultdict
 import os
 from pathlib import Path
+import argparse
 
 import numpy as np
 import plotly.graph_objects as go
@@ -21,6 +23,33 @@ from plotly.subplots import make_subplots
 from typing import Dict, List, Tuple, Any
 from hytale_region_parser import RegionFileParser
 
+INDIVIDUAL_PLOT_HEIGHT = 900
+COMBINED_PLOT_HEIGHT = 1260
+
+# Default colors for ore types
+ORE_COLORS = {
+    "Ore_Adamantite": "#DC143C",  # Red
+    "Ore_Thorium": "#228B22",      # Green
+    "Ore_Cobalt": "#1E90FF",       # Blue
+    "Ore_Iron": "#F5DEB3",         # Beige
+    "Ore_Copper": "#FF8C00",       # Orange
+    "Ore_Silver": "#C0C0C0",       # Light grey
+}
+
+
+def get_ore_color(ore_name: str, index: int = 0, total: int = 1) -> str:
+    """Get color for an ore type, falling back to HSL-based color if not defined."""
+    if ore_name in ORE_COLORS:
+        return ORE_COLORS[ore_name]
+    # Fallback to HSL-based color for unknown ores
+    return f"hsl({(index * 360 // max(total, 1)) % 360}, 70%, 50%)"
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize a string to be safe for use as a filename."""
+    ret = ""
+    for c in filename:
+        ret += c if c.isalnum() or c in (" ", ".", "_", "-") else "_"
+    return ret.strip()
 
 def sanitize_ore_name(name: str) -> str:
     """Strip rock type suffix: Ore_Gold_Volcanic -> Ore_Gold"""
@@ -211,7 +240,8 @@ def analyze_ore_distribution(
         "chunks_found": chunks_found,
         "ore_counts": dict(ore_counts),
         "ore_by_y_level": {k: dict(v) for k, v in ore_by_y_level.items()},
-        "sample_positions": ore_positions[:100]  # Limit to avoid huge output
+        "all_positions": ore_positions,  # All positions for 3D plotting
+        "sample_positions": ore_positions[:100]  # Limited for text output
     }
 
 
@@ -307,7 +337,7 @@ def print_ore_report(results: Dict[str, Any]) -> None:
         print("-" * 70)
         for i, (ore_name, x, y, z) in enumerate(results["sample_positions"][:20], 1):
             print(f"  {i:>2}. {ore_name:<25} at ({x:>6}, {y:>3}, {z:>6})")
-
+    print()
 
 def plot_ore_distribution(results: Dict[str, Any], output_path: Path) -> None:
     """Create an interactive plotly chart of ore distribution by Y-level."""
@@ -349,7 +379,7 @@ def plot_ore_distribution(results: Dict[str, Any], output_path: Path) -> None:
                 x=y_levels,
                 y=counts,
                 name=ore_name,
-                marker_color=f"hsl({(idx * 360 // num_ores) % 360}, 70%, 50%)"
+                marker_color=get_ore_color(ore_name, idx, num_ores)
             ),
             row=idx,
             col=1
@@ -368,20 +398,245 @@ def plot_ore_distribution(results: Dict[str, Any], output_path: Path) -> None:
     
     # Save to HTML
     fig.write_html(output_path)
-    print(f"\nPlot saved to: {output_path}")
+    print(f"Plot saved to: {output_path}")
+
+
+def plot_ore_distribution_3d(
+    results: Dict[str, Any], 
+    output_path: Path,
+    resolution: int = 8
+) -> None:
+    """
+    Create 3D histogram plots of ore distribution.
+    
+    Args:
+        results: Analysis results from analyze_ore_distribution
+        output_path: Path to save the HTML file
+        resolution: Coordinate divisor for binning (e.g., 8 means /8 resolution)
+    """
+    ore_counts = results["ore_counts"]
+    sample_positions = results.get("all_positions", results["sample_positions"])
+    
+    if not ore_counts or not sample_positions:
+        print("No ore data to plot in 3D.")
+        return
+    
+    # Group positions by ore type
+    positions_by_ore: Dict[str, List[Tuple[int, int, int]]] = defaultdict(list)
+    for ore_name, x, y, z in sample_positions:
+        positions_by_ore[ore_name].append((x, y, z))
+    
+    # Sort ores by total count (descending)
+    sorted_ores = sorted(ore_counts.items(), key=lambda x: -x[1])
+    num_ores = len(sorted_ores)
+    
+    # Create combined 3D scatter plot with all ores (togglable)
+    combined_fig = go.Figure()
+    
+    for idx, (ore_name, total_count) in enumerate(sorted_ores):
+        if ore_name not in positions_by_ore:
+            continue
+        
+        positions = positions_by_ore[ore_name]
+        if not positions:
+            continue
+        
+        # Bin positions by resolution
+        binned_counts: Dict[Tuple[int, int, int], int] = defaultdict(int)
+        for x, y, z in positions:
+            bin_x = (x // resolution) * resolution
+            bin_y = (y // resolution) * resolution
+            bin_z = (z // resolution) * resolution
+            binned_counts[(bin_x, bin_y, bin_z)] += 1
+        
+        # Extract coordinates and sizes
+        xs = [pos[0] for pos in binned_counts.keys()]
+        ys = [pos[1] for pos in binned_counts.keys()]
+        zs = [pos[2] for pos in binned_counts.keys()]
+        sizes = list(binned_counts.values())
+        
+        # Normalize sizes for display
+        max_size = max(sizes) if sizes else 1
+        normalized_sizes = [5 + (s / max_size) * 25 for s in sizes]
+        
+        color = get_ore_color(ore_name, idx, num_ores)
+        
+        combined_fig.add_trace(
+            go.Scatter3d(
+                x=xs,
+                y=zs,  # World Z on plotly Y axis
+                z=ys,  # World Y (height) on plotly Z axis (vertical)
+                mode='markers',
+                name=f"{ore_name} ({total_count:,})",
+                marker=dict(
+                    size=normalized_sizes,
+                    color=color,
+                    opacity=0.7,
+                    line=dict(width=0.5, color='white')
+                ),
+                hovertemplate=(
+                    f"{ore_name}<br>"
+                    "X: %{x}<br>"
+                    "Y (Height): %{z}<br>"
+                    "Z: %{y}<br>"
+                    "Count: %{text}<extra></extra>"
+                ),
+                text=[str(s) for s in sizes]
+            )
+        )
+    
+    combined_fig.update_layout(
+        title=f"3D Ore Distribution (Resolution: /{resolution}) - Click legend to toggle",
+        scene=dict(
+            xaxis_title="X (World)",
+            yaxis_title="Z (World)",
+            zaxis_title="Y (Height)",
+            aspectmode='data'
+        ),
+        height=1260,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01
+        )
+    )
+    
+    # Create individual 3D plots for each ore
+    individual_figs = []
+    
+    for idx, (ore_name, total_count) in enumerate(sorted_ores):
+        if ore_name not in positions_by_ore:
+            continue
+        
+        positions = positions_by_ore[ore_name]
+        if not positions:
+            continue
+        
+        # Bin positions by resolution
+        binned_counts: Dict[Tuple[int, int, int], int] = defaultdict(int)
+        for x, y, z in positions:
+            bin_x = (x // resolution) * resolution
+            bin_y = (y // resolution) * resolution
+            bin_z = (z // resolution) * resolution
+            binned_counts[(bin_x, bin_y, bin_z)] += 1
+        
+        xs = [pos[0] for pos in binned_counts.keys()]
+        ys = [pos[1] for pos in binned_counts.keys()]
+        zs = [pos[2] for pos in binned_counts.keys()]
+        sizes = list(binned_counts.values())
+        
+        max_size = max(sizes) if sizes else 1
+        normalized_sizes = [5 + (s / max_size) * 25 for s in sizes]
+        
+        color = get_ore_color(ore_name, idx, num_ores)
+        
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter3d(
+                x=xs,
+                y=zs,  # World Z on plotly Y axis
+                z=ys,  # World Y (height) on plotly Z axis (vertical)
+                mode='markers',
+                name=ore_name,
+                marker=dict(
+                    size=normalized_sizes,
+                    color=color,
+                    opacity=0.7,
+                    line=dict(width=0.5, color='white')
+                ),
+                hovertemplate=(
+                    f"{ore_name}<br>"
+                    "X: %{x}<br>"
+                    "Y (Height): %{z}<br>"
+                    "Z: %{y}<br>"
+                    "Count: %{text}<extra></extra>"
+                ),
+                text=[str(s) for s in sizes]
+            )
+        )
+        
+        fig.update_layout(
+            title=f"{ore_name} Distribution (Total: {total_count:,}, Resolution: /{resolution})",
+            scene=dict(
+                xaxis_title="X (World)",
+                yaxis_title="Z (World)",
+                zaxis_title="Y (Height)",
+                aspectmode='data'
+            ),
+            height=INDIVIDUAL_PLOT_HEIGHT
+        )
+        
+        individual_figs.append(fig)
+    
+    # Combine all figures into a single HTML
+    html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Ore Distribution</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+        h1, h2 {{ color: #333; }}
+        .plot-container {{ margin-bottom: 40px; }}
+        hr {{ margin: 40px 0; border: 1px solid #ddd; }}
+    </style>
+</head>
+<body>
+    <h1>3D Ore Distribution Analysis</h1>
+    <p>Center: {results['center']}, Area: {results['area_size']}x{results['area_size']} chunks, Resolution: /{resolution}</p>
+    
+    <h2>Combined View (Click legend to toggle ores)</h2>
+    <div class="plot-container" id="combined-plot"></div>
+    
+    <hr>
+    <h2>Individual Ore Distributions</h2>
+"""
+    
+    # Add combined plot
+    html_content += f"<script>Plotly.newPlot('combined-plot', {combined_fig.to_json()}.data, {combined_fig.to_json()}.layout);</script>\n"
+    
+    # Add individual plots
+    for i, (fig, (ore_name, _)) in enumerate(zip(individual_figs, sorted_ores)):
+        html_content += f"""
+    <div class="plot-container" id="plot-{i}"></div>
+    <script>Plotly.newPlot('plot-{i}', {fig.to_json()}.data, {fig.to_json()}.layout);</script>
+"""
+    
+    html_content += """
+</body>
+</html>
+"""
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    
+    print(f"3D plot saved to: {output_path}")
 
 
 def main():
+    
+    parser = argparse.ArgumentParser()
     # Configuration - update these paths!
     appdata = os.getenv('APPDATA')
     chunks_folder = Path(appdata + r"\Hytale\UserData\Saves\Server\universe\worlds\default\chunks")
+    parser.add_argument("--chunks_folder", type=Path, default=chunks_folder, help="Path to the Hytale chunks directory")
+    parser.add_argument("--center_x", type=int, default=0, help="Center X coordinate for the analysis")
+    parser.add_argument("--center_z", type=int, default=0, help="Center Z coordinate for the analysis")
+    parser.add_argument("--area_size", type=int, default=3, help="Area size in chunks (e.g., 3 for 3x3 chunks)")
+    parser.add_argument("--plot3d_resolution", type=int, default=8, help="Resolution for the 3D plot")
+    parser.add_argument("--output_filename", type=str, default="ore_distribution", help="Output filename for the plots")
+    args = parser.parse_args()
+    
+    chunks_folder = args.chunks_folder
     
     # Center coordinates for the analysis
-    center_x = 860
-    center_z = -1240
+    center_x = args.center_x
+    center_z = args.center_z
     
     # Area size in chunks (3 = 3x3 = 9 chunks = 96x96 blocks area, 9 = 9x9 = 81 chunks = 288x288 blocks area)
-    area_size = 4
+    area_size = args.area_size
     
     # Sanitize names, removing the containing subtype. E.g. "Ore_Gold_Volcanic" becomes "Ore_Gold"
     sanitize_names = True
@@ -396,15 +651,27 @@ def main():
     print("=" * 70)
     print(f"Chunks folder: {chunks_folder}")
     
+    output_filename = sanitize_filename(args.output_filename)
+    
     # Run analysis
     results = analyze_ore_distribution(chunks_folder, center_x, center_z, area_size, sanitize_names)
     
     # Print report
     print_ore_report(results)
     
+    # Write json file
+    output_json = Path(__file__).parent / f"{output_filename}.json"
+    with open(output_json, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=4)
+        print(f"JSON data saved to: {output_json}")
+    
     # Generate interactive plot
-    output_html = Path(__file__).parent / "ore_distribution.html"
+    output_html = Path(__file__).parent / f"{output_filename}.html"
     plot_ore_distribution(results, output_html)
+    
+    # Generate 3D distribution plot
+    output_3d_html = Path(__file__).parent / f"{output_filename}_3d.html"
+    plot_ore_distribution_3d(results, output_3d_html, resolution=args.plot3d_resolution)
     
     print()
     print("Done!")
