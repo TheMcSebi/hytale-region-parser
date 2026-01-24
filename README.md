@@ -300,24 +300,25 @@ Block index formula: `index = x + z*32 + y*32*32`
 ### Running Tests
 
 ```bash
-pytest
+python -m pytest tests/ -v
 ```
 
 ### Type Checking
 
 ```bash
-mypy src/hytale_region_parser
+python -m mypy src/hytale_region_parser --ignore-missing-imports
 ```
 
 ### Linting
 
 ```bash
-ruff check src/hytale_region_parser
+python -m ruff check src/hytale_region_parser
 ```
 
 ### Building for PyPI
 
 ```bash
+python -m pytest tests/ -q; python -m mypy src/hytale_region_parser; python -m ruff check src/hytale_region_parser
 pip install build twine
 python -m build
 twine upload dist/*

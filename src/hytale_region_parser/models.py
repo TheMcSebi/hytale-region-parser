@@ -66,7 +66,7 @@ class ParsedChunkData:
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert chunk data to a JSON-serializable dictionary.
-        
+
         Returns:
             Dictionary with position keys "x,y,z" mapping to block data
         """
@@ -104,21 +104,3 @@ class ParsedChunkData:
                 }
 
         return result
-
-
-@dataclass
-class RegionData:
-    """Complete parsed region data combining all chunks"""
-    region_x: int = 0
-    region_z: int = 0
-    blocks: Dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert region data to a JSON-serializable dictionary.
-        
-        Returns:
-            Dictionary with position keys "x,y,z" mapping to block data
-        """
-        return self.blocks
-

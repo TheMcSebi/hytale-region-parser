@@ -7,7 +7,6 @@ from hytale_region_parser.models import (
     ChunkSectionData,
     ItemContainerData,
     ParsedChunkData,
-    RegionData,
 )
 
 
@@ -205,25 +204,3 @@ class TestParsedChunkData:
         assert "5,32,10" in result
         assert "TypeA" in result["5,32,10"]["components"]
         assert "TypeB" in result["5,32,10"]["components"]
-
-
-class TestRegionData:
-    """Tests for RegionData dataclass."""
-
-    def test_default_values(self):
-        """Test default values for RegionData."""
-        region = RegionData()
-        assert region.region_x == 0
-        assert region.region_z == 0
-        assert region.blocks == {}
-
-    def test_to_dict(self):
-        """Test RegionData to_dict method."""
-        region = RegionData(
-            region_x=1,
-            region_z=2,
-            blocks={"100,64,200": {"name": "Test", "components": {}}}
-        )
-        result = region.to_dict()
-        assert "100,64,200" in result
-        assert result["100,64,200"]["name"] == "Test"

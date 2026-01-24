@@ -7,7 +7,7 @@ Parser for IndexedStorageFile format used by Hytale for storing region data.
 import io
 import struct
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import zstandard as zstd
 
@@ -29,7 +29,7 @@ class IndexedStorageFile:
     def __init__(self, filepath: Path):
         """
         Initialize the storage file parser.
-        
+
         Args:
             filepath: Path to the .region.bin file
         """
@@ -37,16 +37,16 @@ class IndexedStorageFile:
         self.version: Optional[int] = None
         self.blob_count: Optional[int] = None
         self.segment_size: Optional[int] = None
-        self.blob_indexes: list = []
+        self.blob_indexes: List[int] = []
 
     def read_header(self, f: io.BufferedReader, verbose: bool = True) -> bool:
         """
         Read and validate the file header.
-        
+
         Args:
             f: Open file handle
             verbose: Whether to print header information
-            
+
         Returns:
             True if header is valid, False otherwise
         """
@@ -62,7 +62,7 @@ class IndexedStorageFile:
         magic = header[:self.MAGIC_LENGTH]
         if magic != self.MAGIC_STRING:
             if verbose:
-                print(f"Error: Invalid magic string. Expected {self.MAGIC_STRING}, got {magic}")
+                print(f"Error: Invalid magic string. Expected {self.MAGIC_STRING!r}, got {magic!r}")
             return False
 
         # Read version
@@ -87,36 +87,39 @@ class IndexedStorageFile:
     def read_blob_indexes(self, f: io.BufferedReader) -> None:
         """
         Read the blob index table.
-        
+
         Args:
             f: Open file handle
         """
+        assert self.blob_count is not None, "read_header must be called first"
         f.seek(self.HEADER_LENGTH)
         index_data = f.read(self.blob_count * 4)
 
         self.blob_indexes = []
         for i in range(self.blob_count):
             offset = i * 4
-            segment_index = struct.unpack('>I', index_data[offset:offset+4])[0]
+            segment_index: int = struct.unpack('>I', index_data[offset:offset+4])[0]
             self.blob_indexes.append(segment_index)
 
     def segments_base(self) -> int:
         """Get the file position where segments start"""
+        assert self.blob_count is not None, "read_header must be called first"
         return self.HEADER_LENGTH + self.blob_count * 4
 
     def segment_position(self, segment_index: int) -> int:
         """
         Convert segment index to file position.
-        
+
         Args:
             segment_index: The segment index (1-based)
-            
+
         Returns:
             File position of the segment
-            
+
         Raises:
             ValueError: If segment_index is 0
         """
+        assert self.segment_size is not None, "read_header must be called first"
         if segment_index == 0:
             raise ValueError("Invalid segment index 0")
         segment_offset = (segment_index - 1) * self.segment_size
@@ -125,17 +128,18 @@ class IndexedStorageFile:
     def read_blob(self, f: io.BufferedReader, blob_index: int) -> Optional[bytes]:
         """
         Read and decompress a blob.
-        
+
         Args:
             f: Open file handle
             blob_index: Index of the blob to read
-            
+
         Returns:
             Decompressed blob data, or None if no data or error
-            
+
         Raises:
             IndexError: If blob_index is out of range
         """
+        assert self.blob_count is not None, "read_header must be called first"
         if blob_index < 0 or blob_index >= self.blob_count:
             raise IndexError(f"Blob index {blob_index} out of range")
 
@@ -168,12 +172,12 @@ class IndexedStorageFile:
     def get_chunk_coordinates(self, blob_index: int, region_x: int, region_z: int) -> Tuple[int, int]:
         """
         Convert blob index to chunk coordinates.
-        
+
         Args:
             blob_index: Index of the blob within the region
             region_x: X coordinate of the region
             region_z: Z coordinate of the region
-            
+
         Returns:
             Tuple of (chunk_x, chunk_z)
         """

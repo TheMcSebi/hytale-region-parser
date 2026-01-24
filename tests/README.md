@@ -20,7 +20,6 @@ pytest tests/test_parser.py
 
 ## Test Structure
 
-- `test_bson_parser.py` - Tests for BSON parsing
 - `test_models.py` - Tests for data models
 - `test_storage.py` - Tests for IndexedStorageFile parsing
 - `test_chunk_parser.py` - Tests for chunk data parsing

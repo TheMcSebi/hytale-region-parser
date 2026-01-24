@@ -4,9 +4,11 @@ Region File Parser
 High-level parser for Hytale .region.bin files.
 """
 
+import io
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from types import TracebackType
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Type
 
 from .chunk_parser import ChunkDataParser
 from .models import ChunkSectionData, ParsedChunkData
@@ -16,10 +18,10 @@ from .storage import IndexedStorageFile
 class RegionFileParser:
     """
     Parser for .region.bin files.
-    
+
     This class provides methods to read and parse Hytale region files,
     extracting chunk data, block information, and other game data.
-    
+
     Example:
         >>> parser = RegionFileParser(Path("0.0.region.bin"))
         >>> for chunk in parser.iter_chunks():
@@ -29,7 +31,7 @@ class RegionFileParser:
     def __init__(self, filepath: Path):
         """
         Initialize the region file parser.
-        
+
         Args:
             filepath: Path to the .region.bin file
         """
@@ -37,12 +39,12 @@ class RegionFileParser:
         self.storage = IndexedStorageFile(self.filepath)
         self.region_x: Optional[int] = None
         self.region_z: Optional[int] = None
-        self._file_handle = None
+        self._file_handle: Optional[io.BufferedReader] = None
 
     def parse_filename(self) -> bool:
         """
         Extract region coordinates from filename.
-        
+
         Returns:
             True if coordinates were successfully parsed, False otherwise
         """
@@ -69,7 +71,7 @@ class RegionFileParser:
     def open(self) -> bool:
         """
         Open the region file and read headers.
-        
+
         Returns:
             True if file was opened successfully, False otherwise
         """
@@ -77,7 +79,7 @@ class RegionFileParser:
             return False
 
         try:
-            self._file_handle = open(self.filepath, 'rb')
+            self._file_handle = open(self.filepath, 'rb')  # noqa: SIM115
             if not self.storage.read_header(self._file_handle, verbose=False):
                 self.close()
                 return False
@@ -93,20 +95,24 @@ class RegionFileParser:
             self._file_handle.close()
             self._file_handle = None
 
-    def __enter__(self):
+    def __enter__(self) -> "RegionFileParser":
         """Context manager entry."""
         self.open()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         """Context manager exit."""
         self.close()
-        return False
 
     def get_chunk_count(self) -> int:
         """
         Get the total number of chunks that have data.
-        
+
         Returns:
             Number of chunks with data
         """
@@ -115,7 +121,7 @@ class RegionFileParser:
     def get_chunk_indexes(self) -> List[int]:
         """
         Get list of blob indexes that have chunk data.
-        
+
         Returns:
             List of blob indexes with data
         """
@@ -124,10 +130,10 @@ class RegionFileParser:
     def read_chunk(self, blob_index: int) -> Optional[ParsedChunkData]:
         """
         Read and parse a single chunk by blob index.
-        
+
         Args:
             blob_index: The blob index within the region file
-            
+
         Returns:
             ParsedChunkData if successful, None otherwise
         """
@@ -138,6 +144,7 @@ class RegionFileParser:
         if not chunk_data:
             return None
 
+        assert self.region_x is not None and self.region_z is not None
         chunk_x, chunk_z = self.storage.get_chunk_coordinates(
             blob_index, self.region_x, self.region_z
         )
@@ -152,7 +159,7 @@ class RegionFileParser:
     def iter_chunks(self) -> Iterator[ParsedChunkData]:
         """
         Iterate over all chunks in the region file.
-        
+
         Yields:
             ParsedChunkData for each chunk with data
         """
@@ -167,11 +174,11 @@ class RegionFileParser:
     def to_dict(self, include_all_blocks: bool = True) -> Dict[str, Any]:
         """
         Convert all region data to a JSON-serializable dictionary.
-        
+
         Args:
             include_all_blocks: If True, includes all terrain blocks from sections.
                                If False, only includes containers and block components.
-        
+
         Format:
             {
                 "metadata": {
@@ -189,7 +196,7 @@ class RegionFileParser:
                     ...
                 }
             }
-        
+
         Returns:
             Dictionary with metadata and blocks
         """
@@ -280,7 +287,7 @@ class RegionFileParser:
     ) -> None:
         """
         Extract individual block positions from section indices.
-        
+
         This method decodes the block indices to get exact positions.
         Only non-Empty blocks are added to the output.
         """
@@ -381,9 +388,9 @@ class RegionFileParser:
     def to_dict_summary_only(self) -> Dict[str, Any]:
         """
         Convert region data to a summary dictionary (without individual block positions).
-        
+
         This is much faster for large regions as it doesn't decode block positions.
-        
+
         Returns:
             Dictionary with metadata and block counts
         """
@@ -428,10 +435,10 @@ class RegionFileParser:
     def to_json(self, indent: Optional[int] = 2) -> str:
         """
         Convert all region data to a JSON string.
-        
+
         Args:
             indent: JSON indentation level (None for compact output)
-        
+
         Returns:
             JSON string representation of the region data
         """
@@ -440,7 +447,7 @@ class RegionFileParser:
     def get_all_blocks(self) -> Dict[str, int]:
         """
         Get a dictionary of all unique block types and their occurrence counts.
-        
+
         Returns:
             Dictionary mapping block names to occurrence counts
         """
@@ -455,7 +462,7 @@ class RegionFileParser:
     def get_summary(self) -> Dict[str, Any]:
         """
         Get a summary of the region file contents.
-        
+
         Returns:
             Dictionary containing summary information
         """
@@ -515,7 +522,7 @@ class RegionFileParser:
     def parse(self, verbose: bool = True) -> None:
         """
         Parse the region file and print all chunks (legacy method).
-        
+
         Args:
             verbose: Whether to print detailed output
         """
@@ -532,6 +539,7 @@ class RegionFileParser:
 
             # Find all chunks with data
             chunks_with_data = []
+            assert self.storage.blob_count is not None
             for blob_index in range(self.storage.blob_count):
                 if self.storage.blob_indexes[blob_index] != 0:
                     chunks_with_data.append(blob_index)
@@ -543,6 +551,7 @@ class RegionFileParser:
                 print("-" * 80)
 
             for blob_index in chunks_with_data:
+                assert self.region_x is not None and self.region_z is not None
                 chunk_x, chunk_z = self.storage.get_chunk_coordinates(
                     blob_index, self.region_x, self.region_z
                 )
@@ -553,17 +562,17 @@ class RegionFileParser:
                 if verbose:
                     if chunk_data:
                         print(f"Chunk ({chunk_x:4d}, {chunk_z:4d}) - Blob {blob_index:4d} - Size: {len(chunk_data):8d} bytes")
-                        self._analyze_chunk_data(chunk_data, chunk_x, chunk_z)
+                        self._analyze_chunk_data(chunk_data)
                     else:
                         print(f"Chunk ({chunk_x:4d}, {chunk_z:4d}) - Blob {blob_index:4d} - Failed to read")
 
     def parse_summary(self, verbose: bool = True) -> Dict[str, Any]:
         """
         Parse the region file and return/print a summary.
-        
+
         Args:
             verbose: Whether to print detailed output
-            
+
         Returns:
             Summary dictionary
         """
@@ -584,6 +593,7 @@ class RegionFileParser:
 
             # Find all chunks with data
             chunks_with_data = []
+            assert self.storage.blob_count is not None
             for blob_index in range(self.storage.blob_count):
                 if self.storage.blob_indexes[blob_index] != 0:
                     chunks_with_data.append(blob_index)
@@ -598,6 +608,8 @@ class RegionFileParser:
                     print(f"  Progress: {i}/{len(chunks_with_data)} chunks processed")
 
                 chunk_data = self.storage.read_blob(f, blob_index)
+
+                assert self.region_x is not None and self.region_z is not None
                 chunk_x, chunk_z = self.storage.get_chunk_coordinates(
                     blob_index, self.region_x, self.region_z
                 )
@@ -730,7 +742,7 @@ class RegionFileParser:
     def parse_detailed(self, max_chunks: int = 5, verbose: bool = True) -> None:
         """
         Parse with detailed BSON structure output for debugging.
-        
+
         Args:
             max_chunks: Maximum number of chunks to analyze in detail
             verbose: Whether to print output
@@ -756,6 +768,7 @@ class RegionFileParser:
                 print("-" * 80)
 
             for blob_index in chunks_with_data[:max_chunks]:
+                assert self.region_x is not None and self.region_z is not None
                 chunk_x, chunk_z = self.storage.get_chunk_coordinates(
                     blob_index, self.region_x, self.region_z
                 )
@@ -833,7 +846,7 @@ class RegionFileParser:
         else:
             print(f"{prefix}{obj}")
 
-    def _analyze_chunk_data(self, data: bytes, chunk_x: int, chunk_z: int) -> None:
+    def _analyze_chunk_data(self, data: bytes) -> None:
         """Attempt to analyze chunk data structure."""
         parser = ChunkDataParser(data)
 

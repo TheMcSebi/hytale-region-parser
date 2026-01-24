@@ -5,9 +5,10 @@ Parser for chunk data in Hytale's region format (BSON-based).
 """
 
 import struct
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
-from .bson_parser import BsonParser
+import bson
+
 from .models import (
     BlockComponent,
     BlockPaletteEntry,
@@ -17,100 +18,56 @@ from .models import (
 )
 
 
+def _convert_bson_types(obj: Any) -> Any:
+    """
+    Convert bson library types to standard Python types for JSON serialization.
+
+    The bson library may return special types like ObjectId, datetime, etc.
+    This function converts them to JSON-serializable types.
+    """
+    if obj is None:
+        return None
+    elif isinstance(obj, dict):
+        return {k: _convert_bson_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_convert_bson_types(item) for item in obj]
+    elif isinstance(obj, bytes):
+        # Return as hex string for JSON compatibility
+        return obj.hex()
+    elif isinstance(obj, bson.ObjectId):
+        return str(obj)
+    elif hasattr(obj, 'isoformat'):  # datetime
+        return obj.isoformat()
+    else:
+        return obj
+
+
 class ChunkDataParser:
     """Parser for chunk data in Hytale's region format (BSON-based)"""
 
     def __init__(self, data: bytes):
         """
         Initialize the chunk data parser.
-        
+
         Args:
             data: Raw chunk data bytes
         """
         self.data = data
-        self.pos = 0
-
-    def read_int(self) -> int:
-        """Read a 4-byte big-endian integer"""
-        if self.pos + 4 > len(self.data):
-            raise ValueError("Not enough data to read int")
-        value = struct.unpack('>I', self.data[self.pos:self.pos+4])[0]
-        self.pos += 4
-        return value
-
-    def read_int_le(self) -> int:
-        """Read a 4-byte little-endian integer"""
-        if self.pos + 4 > len(self.data):
-            raise ValueError("Not enough data to read int")
-        value = struct.unpack('<i', self.data[self.pos:self.pos+4])[0]
-        self.pos += 4
-        return value
-
-    def read_string(self) -> str:
-        """Read a length-prefixed string (big-endian length)"""
-        length = self.read_int()
-        if length < 0 or length > 1000000:  # Sanity check
-            raise ValueError(f"Invalid string length: {length}")
-        if self.pos + length > len(self.data):
-            raise ValueError("Not enough data to read string")
-
-        string = self.data[self.pos:self.pos+length].decode('utf-8', errors='replace')
-        self.pos += length
-        return string
-
-    def read_byte(self) -> int:
-        """Read a single byte"""
-        if self.pos >= len(self.data):
-            raise ValueError("Not enough data to read byte")
-        value = self.data[self.pos]
-        self.pos += 1
-        return value
-
-    def read_bytes(self, count: int) -> bytes:
-        """Read a specified number of bytes"""
-        if self.pos + count > len(self.data):
-            raise ValueError("Not enough data to read bytes")
-        value = self.data[self.pos:self.pos+count]
-        self.pos += count
-        return value
-
-    def read_short(self) -> int:
-        """Read a 2-byte big-endian short"""
-        if self.pos + 2 > len(self.data):
-            raise ValueError("Not enough data to read short")
-        value = struct.unpack('>H', self.data[self.pos:self.pos+2])[0]
-        self.pos += 2
-        return value
-
-    def read_short_le(self) -> int:
-        """Read a 2-byte little-endian short"""
-        if self.pos + 2 > len(self.data):
-            raise ValueError("Not enough data to read short")
-        value = struct.unpack('<h', self.data[self.pos:self.pos+2])[0]
-        self.pos += 2
-        return value
-
-    def skip_bytes(self, count: int) -> None:
-        """Skip a specified number of bytes"""
-        self.pos += count
-
-    def remaining(self) -> int:
-        """Return number of bytes remaining"""
-        return len(self.data) - self.pos
 
     def try_parse_bson(self) -> Optional[Dict[str, Any]]:
         """Try to parse the data as a BSON document"""
         try:
-            parser = BsonParser(self.data)
-            return parser.parse()
+            result = bson.loads(self.data)
+            return _convert_bson_types(result)
         except Exception:
+            print("Warning: Failed to parse BSON data")
             return None
 
     @staticmethod
     def parse_block_section_data(data_hex: str, section_y: int = 0) -> ChunkSectionData:
         """
         Parse block section data from hex string.
-        
+
         Block Section Data Format (version 6):
         - 4 bytes: Block migration version (int32 BE)
         - 1 byte: Palette type (0=Empty, 1=HalfByte, 2=Byte, 3=Short)
@@ -121,11 +78,11 @@ class ChunkDataParser:
             - N bytes: UTF-8 string (block name)
             - 2 bytes: block count (signed short BE)
         - Remaining bytes: block indices
-        
+
         Args:
             data_hex: Hex-encoded block data string
             section_y: Y index of the section
-            
+
         Returns:
             ChunkSectionData with parsed palette and block counts
         """
@@ -217,7 +174,7 @@ class ChunkDataParser:
     def parse(self) -> ParsedChunkData:
         """
         Parse chunk data and extract all components.
-        
+
         Returns:
             ParsedChunkData object containing all parsed information
         """
@@ -330,38 +287,3 @@ class ChunkDataParser:
                                         result.block_names.add(entry.name)
 
         return result
-
-    def parse_block_section(self, section_index: int) -> Optional[ChunkSectionData]:
-        """
-        Parse a single block section.
-        
-        Args:
-            section_index: Y index of the section
-            
-        Returns:
-            ChunkSectionData if successful, None otherwise
-        """
-        section = ChunkSectionData(section_y=section_index)
-
-        try:
-            # Read palette type
-            palette_type = self.read_byte()
-
-            # Read block palette based on type
-            if palette_type == 0:  # Empty
-                pass
-            elif palette_type == 1:  # Single value
-                block_id = self.read_int()
-                section.block_palette = [str(block_id)]
-            elif palette_type == 2:  # Indexed palette
-                palette_size = self.read_short()
-                for _ in range(palette_size):
-                    # Read UTF string for block name
-                    str_len = self.read_short()
-                    block_name = self.read_bytes(str_len).decode('utf-8', errors='replace')
-                    section.block_palette.append(block_name)
-
-        except Exception:
-            pass
-
-        return section

@@ -1,93 +1,37 @@
-"""
-Command-line interface for Hytale Region Parser
-"""
+"""Command-line interface for Hytale Region Parser"""
 
 import argparse
 import fnmatch
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from . import __version__
 from .region_parser import RegionFileParser
 
 
-def normalize_filter_pattern(pattern: str) -> str:
-    """
-    Normalize a filter pattern, handling Windows CMD escape sequences.
-    
-    On Windows CMD, * must be escaped as ^* to prevent shell expansion.
-    This function converts ^* back to * for fnmatch.
-    
-    Args:
-        pattern: The filter pattern (e.g., "Ore_^*" or "Ore_*")
-        
-    Returns:
-        Normalized pattern with ^* converted to *
-    """
-    return pattern.replace("^*", "*").replace("^?", "?")
+def matches_filter(name: str, pattern: str) -> bool:
+    """Check if name matches fnmatch pattern."""
+    return fnmatch.fnmatch(name, pattern)
 
 
-def matches_block_filter(block_name: str, pattern: str) -> bool:
-    """
-    Check if a block name matches the filter pattern.
-    
-    Uses fnmatch for glob-style pattern matching (* and ? wildcards).
-    
-    Args:
-        block_name: The block name to check
-        pattern: The fnmatch pattern (already normalized)
-        
-    Returns:
-        True if the block name matches the pattern
-    """
-    return fnmatch.fnmatch(block_name, pattern)
-
-
-def filter_block_summary(block_summary: Dict[str, int], pattern: str) -> Dict[str, int]:
-    """
-    Filter a block summary dictionary to only include matching blocks.
-    
-    Args:
-        block_summary: Dictionary mapping block names to counts
-        pattern: The fnmatch pattern to filter by
-        
-    Returns:
-        Filtered dictionary with only matching block names
-    """
-    return {
-        name: count
-        for name, count in block_summary.items()
-        if matches_block_filter(name, pattern)
-    }
+def filter_block_summary(summary: Dict[str, int], pattern: str) -> Dict[str, int]:
+    """Filter block summary to only include matching blocks."""
+    return {k: v for k, v in summary.items() if matches_filter(k, pattern)}
 
 
 def filter_blocks_data(data: Dict[str, Any], pattern: str) -> Dict[str, Any]:
-    """
-    Filter a full blocks data dictionary to only include matching blocks.
-    
-    Args:
-        data: The full data dictionary from to_dict()
-        pattern: The fnmatch pattern to filter by
-        
-    Returns:
-        Filtered data dictionary
-    """
-    # Filter block_summary in metadata
+    """Filter full data dictionary to only include matching blocks."""
     if "metadata" in data and "block_summary" in data["metadata"]:
         data["metadata"]["block_summary"] = filter_block_summary(
             data["metadata"]["block_summary"], pattern
         )
-    
-    # Filter blocks dictionary
     if "blocks" in data:
         data["blocks"] = {
-            pos: block_data
-            for pos, block_data in data["blocks"].items()
-            if "name" in block_data and matches_block_filter(block_data["name"], pattern)
+            pos: block for pos, block in data["blocks"].items()
+            if "name" in block and matches_filter(block["name"], pattern)
         }
-    
     return data
 
 
@@ -96,311 +40,196 @@ def find_region_files(folder: Path) -> List[Path]:
     return list(folder.glob("*.region.bin"))
 
 
-def detect_folder_structure(input_path: Path) -> Tuple[str, Dict[str, List[Path]]]:
+def detect_folder_structure(input_path: Path) -> tuple[str, Dict[str, List[Path]]]:
     """
-    Detect the folder structure and categorize region files.
-    
+    Detect folder structure and categorize region files.
+
     Returns:
-        Tuple of (structure_type, files_dict) where:
-        - structure_type: "universe", "chunks", or "flat"
-        - files_dict: Dictionary mapping world names to lists of region files
-          For "flat" structure, the key is empty string
+        (structure_type, files_dict) where structure_type is:
+        "universe", "chunks", "flat", or "empty"
     """
     # Check if input is a "chunks" folder directly
     if input_path.name == "chunks":
-        region_files = find_region_files(input_path)
-        if region_files:
-            # Get world name from parent folder
+        files = find_region_files(input_path)
+        if files:
             world_name = input_path.parent.name if input_path.parent != input_path else "world"
-            return ("chunks", {world_name: region_files})
+            return "chunks", {world_name: files}
 
-    # Check if input contains world folders with "chunks" subfolders (universe structure)
+    # Check for universe structure (world folders with chunks subfolders)
     worlds: Dict[str, List[Path]] = {}
     for item in input_path.iterdir():
         if item.is_dir():
             chunks_folder = item / "chunks"
             if chunks_folder.is_dir():
-                region_files = find_region_files(chunks_folder)
-                if region_files:
-                    worlds[item.name] = region_files
-
+                files = find_region_files(chunks_folder)
+                if files:
+                    worlds[item.name] = files
     if worlds:
-        return ("universe", worlds)
+        return "universe", worlds
 
-    # Check if input directly contains region files (flat structure)
-    region_files = find_region_files(input_path)
-    if region_files:
-        return ("flat", {"": region_files})
+    # Check for flat structure (region files directly in folder)
+    files = find_region_files(input_path)
+    if files:
+        return "flat", {"": files}
 
-    # No region files found
-    return ("empty", {})
-
-
-def parse_single_file(
-    filepath: Path,
-    indent: Optional[int] = 2,
-    include_all_blocks: bool = True,
-    summary_only: bool = False,
-    block_filter: Optional[str] = None
-) -> Dict[str, Any]:
-    """Parse a single region file and return the data dictionary."""
-    with RegionFileParser(filepath) as parser:
-        if summary_only:
-            data = parser.to_dict_summary_only()
-            if block_filter:
-                data["block_summary"] = filter_block_summary(data["block_summary"], block_filter)
-            return data
-        data = parser.to_dict(include_all_blocks=include_all_blocks)
-        if block_filter:
-            data = filter_blocks_data(data, block_filter)
-        return data
+    return "empty", {}
 
 
-def parse_multiple_files(
+def parse_files(
     filepaths: List[Path],
-    indent: Optional[int] = 2,
     quiet: bool = False,
     include_all_blocks: bool = True,
     summary_only: bool = False,
     block_filter: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Parse multiple region files and merge into a single dictionary."""
+    """Parse one or more region files and return merged data."""
     if summary_only:
-        # For summary mode, aggregate block summaries
         combined_summary: Dict[str, int] = {}
-        combined_containers: List[Dict] = []
+        combined_containers: List[Dict[str, Any]] = []
         total_chunks = 0
 
         for filepath in filepaths:
-            if not quiet:
+            if not quiet and len(filepaths) > 1:
                 print(f"Parsing {filepath.name}...", file=sys.stderr)
             try:
                 with RegionFileParser(filepath) as parser:
                     data = parser.to_dict_summary_only()
                     total_chunks += data["metadata"]["chunk_count"]
-                    for block_name, count in data["block_summary"].items():
-                        if not block_filter or matches_block_filter(block_name, block_filter):
-                            combined_summary[block_name] = combined_summary.get(block_name, 0) + count
+                    for name, count in data["block_summary"].items():
+                        if not block_filter or matches_filter(name, block_filter):
+                            combined_summary[name] = combined_summary.get(name, 0) + count
                     combined_containers.extend(data.get("containers", []))
             except Exception as e:
                 print(f"Warning: Failed to parse {filepath}: {e}", file=sys.stderr)
 
         return {
-            "metadata": {
-                "total_chunks": total_chunks,
-                "total_region_files": len(filepaths)
-            },
+            "metadata": {"total_chunks": total_chunks, "total_region_files": len(filepaths)},
             "block_summary": combined_summary,
             "containers": combined_containers
         }
+
+    # Full mode
+    result: Dict[str, Any] = {
+        "metadata": {"total_chunks": 0, "total_region_files": len(filepaths), "block_summary": {}},
+        "blocks": {}
+    }
+
+    for filepath in filepaths:
+        if not quiet and len(filepaths) > 1:
+            print(f"Parsing {filepath.name}...", file=sys.stderr)
+        try:
+            with RegionFileParser(filepath) as parser:
+                data = parser.to_dict(include_all_blocks=include_all_blocks)
+                if block_filter:
+                    data = filter_blocks_data(data, block_filter)
+
+                result["metadata"]["total_chunks"] += data["metadata"]["chunk_count"]
+                for name, count in data["metadata"]["block_summary"].items():
+                    result["metadata"]["block_summary"][name] = \
+                        result["metadata"]["block_summary"].get(name, 0) + count
+                result["blocks"].update(data["blocks"])
+        except Exception as e:
+            print(f"Warning: Failed to parse {filepath}: {e}", file=sys.stderr)
+
+    return result
+
+
+def write_output(
+    data: Dict[str, Any],
+    output_path: Optional[Path],
+    stdout: bool,
+    quiet: bool,
+    compact: bool,
+    header: Optional[str] = None
+) -> None:
+    """Write parsed data to file or stdout."""
+    indent = None if compact else 2
+    json_output = json.dumps(data, indent=indent, default=str)
+
+    if stdout:
+        if header:
+            print(f"\n=== {header} ===")
+        print(json_output)
     else:
-        # For full mode, merge all blocks
-        result: Dict[str, Any] = {
-            "metadata": {
-                "total_chunks": 0,
-                "total_region_files": len(filepaths),
-                "block_summary": {}
-            },
-            "blocks": {}
-        }
-
-        for filepath in filepaths:
-            if not quiet:
-                print(f"Parsing {filepath.name}...", file=sys.stderr)
-            try:
-                file_data = parse_single_file(filepath, indent, include_all_blocks, summary_only=False, block_filter=block_filter)
-                result["metadata"]["total_chunks"] += file_data["metadata"]["chunk_count"]
-                # Merge block summary
-                for block_name, count in file_data["metadata"]["block_summary"].items():
-                    result["metadata"]["block_summary"][block_name] = \
-                        result["metadata"]["block_summary"].get(block_name, 0) + count
-                # Merge blocks
-                result["blocks"].update(file_data["blocks"])
-            except Exception as e:
-                print(f"Warning: Failed to parse {filepath}: {e}", file=sys.stderr)
-
-        return result
-
-
-def get_output_filename_for_single_file(input_path: Path) -> Path:
-    """Get output filename for a single region file in current working directory."""
-    stem = input_path.stem  # e.g., "-2.-3.region"
-    return Path.cwd() / f"{stem}.json"
+        assert output_path is not None
+        output_path.write_text(json_output, encoding='utf-8')
+        if not quiet:
+            print(f"Output written to {output_path}", file=sys.stderr)
 
 
 def main() -> int:
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
         prog='hytale-region-parser',
-        description='Parser for Hytale .region.bin files (IndexedStorageFile format)',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Parser for Hytale .region.bin files',
         epilog="""
 Examples:
-  # Parse single file (writes -2.-3.region.json in current directory)
-  hytale-region-parser chunks/-2.-3.region.bin
-  
-  # Parse folder of region files
+  hytale-region-parser chunks/0.0.region.bin
   hytale-region-parser path/to/chunks/
-  
-  # Parse universe folder (creates <worldname>.json for each world)
   hytale-region-parser path/to/universe/worlds/
-  
-  # Output to stdout instead of file
   hytale-region-parser chunks/0.0.region.bin --stdout
         """
     )
 
-    parser.add_argument(
-        'input_path',
-        type=Path,
-        help='Path to a .region.bin file or folder containing region files'
-    )
-
-    parser.add_argument(
-        '--output', '-o',
-        type=Path,
-        metavar='FILE',
-        help='Output file path (overrides default naming)'
-    )
-
-    parser.add_argument(
-        '--stdout',
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help='Output to stdout instead of writing to file (default: off)'
-    )
-
-    parser.add_argument(
-        '--compact',
-        action='store_true',
-        help='Output compact JSON without indentation'
-    )
-
-    parser.add_argument(
-        '--quiet', '-q',
-        action='store_true',
-        help='Suppress progress and status messages'
-    )
-
-    parser.add_argument(
-        '--summary-only', '-s',
-        action='store_true',
-        help='Output block counts summary only (no individual block positions - much faster)'
-    )
-
-    parser.add_argument(
-        '--no-blocks',
-        action='store_true',
-        help='Exclude terrain blocks, only include containers and block components'
-    )
-
-    parser.add_argument(
-        '--filter', '-f',
-        type=str,
-        metavar='PATTERN',
-        help='Filter blocks by name pattern (fnmatch style: * and ? wildcards). '
-             'Use ^* to escape * on Windows CMD. Example: "Ore_*" or "Ore_^*" on CMD'
-    )
-
-    parser.add_argument(
-        '--version', '-V',
-        action='version',
-        version=f'%(prog)s {__version__}'
-    )
+    parser.add_argument('input_path', type=Path, help='Path to .region.bin file or folder')
+    parser.add_argument('--output', '-o', type=Path, help='Output file path')
+    parser.add_argument('--stdout', action='store_true', help='Output to stdout')
+    parser.add_argument('--compact', action='store_true', help='Compact JSON output')
+    parser.add_argument('--quiet', '-q', action='store_true', help='Suppress progress messages')
+    parser.add_argument('--summary-only', '-s', action='store_true', help='Block counts only (faster)')
+    parser.add_argument('--no-blocks', action='store_true', help='Exclude terrain blocks')
+    parser.add_argument('--filter', '-f', type=str, metavar='PATTERN',
+                        help='Filter blocks by pattern (fnmatch: * and ?). Use ^* on Windows CMD.')
+    parser.add_argument('--version', '-V', action='version', version=f'%(prog)s {__version__}')
 
     args = parser.parse_args()
 
-    # Validate input exists
     if not args.input_path.exists():
         print(f"Error: Path not found: {args.input_path}", file=sys.stderr)
         return 1
 
-    indent = None if args.compact else 2
+    block_filter = args.filter if args.filter else None
     cwd = Path.cwd()
-    include_all_blocks = not args.no_blocks
-    summary_only = args.summary_only
-    block_filter = normalize_filter_pattern(args.filter) if args.filter else None
 
     try:
-        # Check if input is a file or directory
         if args.input_path.is_file():
-            # Single file mode
-            data = parse_single_file(args.input_path, indent, include_all_blocks, summary_only, block_filter)
-            json_output = json.dumps(data, indent=indent, default=str)
-
-            if args.stdout:
-                print(json_output)
-            else:
-                output_path = args.output or get_output_filename_for_single_file(args.input_path)
-                output_path.write_text(json_output, encoding='utf-8')
-                if not args.quiet:
-                    print(f"Output written to {output_path}", file=sys.stderr)
+            data = parse_files(
+                [args.input_path], args.quiet, not args.no_blocks, args.summary_only, block_filter
+            )
+            output_path = args.output or (cwd / f"{args.input_path.stem}.json")
+            write_output(data, output_path, args.stdout, args.quiet, args.compact)
 
         elif args.input_path.is_dir():
-            # Directory mode
-            structure_type, files_dict = detect_folder_structure(args.input_path)
+            structure, files_dict = detect_folder_structure(args.input_path)
 
-            if structure_type == "empty":
+            if structure == "empty":
                 print(f"Error: No .region.bin files found in {args.input_path}", file=sys.stderr)
                 return 1
 
             if not args.quiet:
-                total_files = sum(len(f) for f in files_dict.values())
-                print(f"Found {total_files} region file(s) in {len(files_dict)} location(s)", file=sys.stderr)
+                total = sum(len(f) for f in files_dict.values())
+                print(f"Found {total} region file(s) in {len(files_dict)} location(s)", file=sys.stderr)
 
-            if structure_type == "universe":
-                # Universe mode: create one JSON per world in cwd
-                for world_name, region_files in files_dict.items():
+            if structure == "universe":
+                for world_name, files in files_dict.items():
                     if not args.quiet:
-                        print(f"\nProcessing world: {world_name} ({len(region_files)} files)", file=sys.stderr)
+                        print(f"\nProcessing world: {world_name} ({len(files)} files)", file=sys.stderr)
 
-                    data = parse_multiple_files(region_files, indent, args.quiet, include_all_blocks, summary_only, block_filter)
-                    json_output = json.dumps(data, indent=indent, default=str)
-
-                    if args.stdout:
-                        if len(files_dict) > 1:
-                            print(f"\n=== {world_name} ===")
-                        print(json_output)
-                    else:
-                        output_path = args.output if (args.output and len(files_dict) == 1) else (cwd / f"{world_name}.json")
-                        output_path.write_text(json_output, encoding='utf-8')
-                        if not args.quiet:
-                            print(f"Output written to {output_path}", file=sys.stderr)
-
-            elif structure_type == "chunks":
-                # Chunks folder: use parent folder name as world name
-                world_name, region_files = next(iter(files_dict.items()))
+                    data = parse_files(files, args.quiet, not args.no_blocks, args.summary_only, block_filter)
+                    output_path = args.output if (args.output and len(files_dict) == 1) else (cwd / f"{world_name}.json")
+                    header = world_name if args.stdout and len(files_dict) > 1 else None
+                    write_output(data, output_path, args.stdout, args.quiet, args.compact, header)
+            else:
+                # chunks or flat structure
+                world_name, files = next(iter(files_dict.items()))
                 if not args.quiet:
-                    print(f"Processing world: {world_name} ({len(region_files)} files)", file=sys.stderr)
+                    label = f"world: {world_name}" if world_name else f"folder: {args.input_path.name}"
+                    print(f"Processing {label} ({len(files)} files)", file=sys.stderr)
 
-                data = parse_multiple_files(region_files, indent, args.quiet, include_all_blocks, summary_only, block_filter)
-                json_output = json.dumps(data, indent=indent, default=str)
-
-                if args.stdout:
-                    print(json_output)
-                else:
-                    output_path = args.output or (cwd / f"{world_name}.json")
-                    output_path.write_text(json_output, encoding='utf-8')
-                    if not args.quiet:
-                        print(f"Output written to {output_path}", file=sys.stderr)
-
-            else:  # flat structure
-                # Flat folder: combine all files into one JSON
-                region_files = files_dict.get("", [])
-                if not args.quiet:
-                    print(f"Processing {len(region_files)} files from {args.input_path.name}", file=sys.stderr)
-
-                data = parse_multiple_files(region_files, indent, args.quiet, include_all_blocks, summary_only, block_filter)
-                json_output = json.dumps(data, indent=indent, default=str)
-
-                if args.stdout:
-                    print(json_output)
-                else:
-                    output_path = args.output or (cwd / "regions.json")
-                    output_path.write_text(json_output, encoding='utf-8')
-                    if not args.quiet:
-                        print(f"Output written to {output_path}", file=sys.stderr)
-
+                data = parse_files(files, args.quiet, not args.no_blocks, args.summary_only, block_filter)
+                default_name = f"{world_name}.json" if world_name else "regions.json"
+                output_path = args.output or (cwd / default_name)
+                write_output(data, output_path, args.stdout, args.quiet, args.compact)
         else:
             print(f"Error: {args.input_path} is neither a file nor a directory", file=sys.stderr)
             return 1
