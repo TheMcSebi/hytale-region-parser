@@ -6,35 +6,9 @@ Uses the bson library for parsing.
 """
 
 import struct
-from enum import IntEnum
 from typing import Any, Dict, List, Tuple
 
 import bson
-
-
-class BsonType(IntEnum):
-    """BSON element types"""
-    DOUBLE = 0x01
-    STRING = 0x02
-    DOCUMENT = 0x03
-    ARRAY = 0x04
-    BINARY = 0x05
-    UNDEFINED = 0x06  # Deprecated
-    OBJECT_ID = 0x07
-    BOOLEAN = 0x08
-    DATETIME = 0x09
-    NULL = 0x0A
-    REGEX = 0x0B
-    DBPOINTER = 0x0C  # Deprecated
-    JAVASCRIPT = 0x0D
-    SYMBOL = 0x0E  # Deprecated
-    CODE_W_SCOPE = 0x0F
-    INT32 = 0x10
-    TIMESTAMP = 0x11
-    INT64 = 0x12
-    DECIMAL128 = 0x13
-    MIN_KEY = 0xFF
-    MAX_KEY = 0x7F
 
 
 def _convert_bson_types(obj: Any) -> Any:

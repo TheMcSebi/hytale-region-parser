@@ -25,7 +25,7 @@ Example usage:
     >>> print(f"Found {summary['unique_blocks']} unique block types")
 """
 
-from .bson_parser import BsonParser, BsonType
+from .bson_parser import BsonParser
 from .chunk_parser import ChunkDataParser
 from .models import (
     BlockComponent,
@@ -47,7 +47,6 @@ __all__ = [
     "ChunkDataParser",
     "IndexedStorageFile",
     "BsonParser",
-    "BsonType",
     # Data models
     "ParsedChunkData",
     "ChunkSectionData",

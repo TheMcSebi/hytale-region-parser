@@ -76,8 +76,8 @@ class TestChunkSectionData:
         assert section.section_y == 5
         assert section.block_palette == []
         assert section.block_counts == {}
-        assert section.block_data is None
-        assert section.has_light_data is False
+        assert section.block_indices is None
+        assert section.palette_type == 0
 
     def test_with_palette(self):
         """Test ChunkSectionData with block palette."""

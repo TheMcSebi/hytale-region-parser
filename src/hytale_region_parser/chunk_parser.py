@@ -4,7 +4,6 @@ Chunk Data Parser
 Parser for chunk data in Hytale's region format (BSON-based).
 """
 
-import re
 import struct
 from typing import Any, Dict, List, Optional, Set
 
@@ -215,149 +214,6 @@ class ChunkDataParser:
 
         return section
 
-    def extract_block_names_from_bytes(self) -> Set[str]:
-        """Extract block names using pattern matching on binary data"""
-        block_names: Set[str] = set()
-
-        # Decode with replacement character for invalid sequences
-        try:
-            text = self.data.decode('utf-8', errors='replace')
-        except Exception:
-            return block_names
-
-        # Pattern: Capital + lowercase letters, then (_Capital + lowercase/digits)+
-        pattern = r'(?<![A-Za-z0-9_])([A-Z][a-z]+(?:_[A-Z][a-z][a-z0-9]*)+)(?![a-z])'
-
-        for match in re.finditer(pattern, text):
-            name = match.group(1)
-
-            # Skip if contains replacement character
-            if '\ufffd' in name:
-                continue
-
-            # Check if starts with valid prefix
-            has_valid_prefix = any(name.startswith(prefix) for prefix in self.VALID_PREFIXES)
-            if not has_valid_prefix:
-                continue
-
-            # Verify each segment is properly formed
-            segments = name.split('_')
-            valid = True
-            for seg in segments:
-                if len(seg) < 2 or not seg[0].isupper():
-                    valid = False
-                    break
-                rest = seg[1:]
-                if not rest or not all(c.islower() or c.isdigit() for c in rest):
-                    valid = False
-                    break
-                if not any(c.islower() for c in rest):
-                    valid = False
-                    break
-
-            if valid and len(name) <= 80:
-                block_names.add(name)
-
-        return block_names
-
-    def parse_block_components(self, doc: Dict[str, Any]) -> List[BlockComponent]:
-        """Parse BlockComponentChunk/BlockComponents from BSON document"""
-        components = []
-
-        # Look for BlockComponents in the document
-        block_components = doc.get('BlockComponents', {})
-
-        if isinstance(block_components, dict):
-            for index_str, component_data in block_components.items():
-                try:
-                    index = int(index_str)
-
-                    # Calculate position from index
-                    # Index = x + y*32 + z*32*32 for a section
-                    x = index % 32
-                    y = (index // 32) % 32
-                    z = index // (32 * 32)
-
-                    # Determine component type
-                    comp_type = "Unknown"
-                    if isinstance(component_data, dict):
-                        comp_type = component_data.get('Type', 'Unknown')
-
-                    component = BlockComponent(
-                        index=index,
-                        position=(x, y, z),
-                        component_type=comp_type,
-                        data=component_data if isinstance(component_data, dict) else {}
-                    )
-                    components.append(component)
-                except (ValueError, TypeError):
-                    continue
-
-        return components
-
-    def parse_item_containers(self, doc: Dict[str, Any]) -> List[ItemContainerData]:
-        """Parse ItemContainer data from BSON document"""
-        containers: List[ItemContainerData] = []
-
-        # Search recursively for ItemContainer data
-        def find_containers(obj: Any, path: str = "") -> List[ItemContainerData]:
-            result: List[ItemContainerData] = []
-
-            if isinstance(obj, dict):
-                # Check for container component (nested in Components > container)
-                inner_container = None
-                if 'Components' in obj and isinstance(obj['Components'], dict):
-                    inner_container = obj['Components'].get('container')
-
-                # Check if this is an ItemContainerState or has ItemContainer directly
-                container_obj = inner_container or obj
-
-                if container_obj and isinstance(container_obj, dict):
-                    if (container_obj.get('Type') == 'ItemContainerState' or
-                        'ItemContainer' in container_obj):
-
-                        pos = container_obj.get('Position', {})
-                        if isinstance(pos, dict):
-                            position = (pos.get('X', 0), pos.get('Y', 0), pos.get('Z', 0))
-                        else:
-                            position = (0, 0, 0)
-
-                        item_container = container_obj.get('ItemContainer', {})
-                        capacity = item_container.get('Capacity', 0) if isinstance(item_container, dict) else 0
-
-                        container = ItemContainerData(
-                            position=position,
-                            capacity=capacity,
-                            allow_viewing=container_obj.get('AllowViewing', True),
-                            custom_name=container_obj.get('Custom_Name'),
-                            who_placed_uuid=container_obj.get('WhoPlacedUuid'),
-                            placed_by_interaction=container_obj.get('PlacedByInteraction', False)
-                        )
-
-                        # Parse items if present
-                        if isinstance(item_container, dict):
-                            items = item_container.get('Items', {})
-                            # Items can be a dict with slot numbers as keys
-                            if isinstance(items, dict):
-                                container.items = list(items.values())
-                            elif isinstance(items, list):
-                                container.items = items
-
-                        result.append(container)
-
-                # Recurse into dict values (but avoid double-counting)
-                for key, value in obj.items():
-                    if key not in ('Components',):  # Don't recurse into nested components we already handled
-                        result.extend(find_containers(value, f"{path}.{key}"))
-
-            elif isinstance(obj, list):
-                for i, item in enumerate(obj):
-                    result.extend(find_containers(item, f"{path}[{i}]"))
-
-            return result
-
-        return find_containers(doc)
-
     def parse(self) -> ParsedChunkData:
         """
         Parse chunk data and extract all components.
@@ -472,9 +328,6 @@ class ChunkDataParser:
                                 for entry in section.block_palette:
                                     if entry.name and entry.name != "Empty":
                                         result.block_names.add(entry.name)
-
-        # Also extract block names from raw bytes (for palette data) - backup method
-        result.block_names.update(self.extract_block_names_from_bytes())
 
         return result
 

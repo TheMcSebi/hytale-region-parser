@@ -1,7 +1,7 @@
 """Tests for the BSON parser."""
 
 import pytest
-from hytale_region_parser.bson_parser import BsonParser, BsonType
+from hytale_region_parser.bson_parser import BsonParser
 
 
 class TestBsonParser:
@@ -83,8 +83,8 @@ class TestBsonParser:
         doc = bytearray()
         # Document size (will be filled in)
         doc.extend([0, 0, 0, 0])
-        # Type: int32
-        doc.append(BsonType.INT32)
+        # Type: int32 (0x10)
+        doc.append(0x10)
         # Field name "x" + null
         doc.extend(b'x\x00')
         # Value: 1 (little-endian)
@@ -102,7 +102,7 @@ class TestBsonParser:
         """Test parsing boolean values."""
         doc = bytearray()
         doc.extend([0, 0, 0, 0])  # Size placeholder
-        doc.append(BsonType.BOOLEAN)
+        doc.append(0x08)  # Type: boolean
         doc.extend(b'flag\x00')
         doc.append(0x01)  # True
         doc.append(0x00)  # Terminator
@@ -116,7 +116,7 @@ class TestBsonParser:
         """Test parsing null value."""
         doc = bytearray()
         doc.extend([0, 0, 0, 0])
-        doc.append(BsonType.NULL)
+        doc.append(0x0A)  # Type: null
         doc.extend(b'empty\x00')
         doc.append(0x00)
         doc[0:4] = len(doc).to_bytes(4, 'little')

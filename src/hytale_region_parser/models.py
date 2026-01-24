@@ -46,12 +46,6 @@ class ChunkSectionData:
     block_counts: Dict[str, int] = field(default_factory=dict)  # Block name -> count
     block_indices: Optional[bytes] = None  # Raw block index data
     palette_type: int = 0  # 0=Empty, 1=HalfByte, 2=Byte, 3=Short
-    block_data: Optional[bytes] = None
-    filler_data: Optional[bytes] = None
-    rotation_data: Optional[bytes] = None
-    physics_data: Optional[bytes] = None
-    fluid_data: Optional[bytes] = None
-    has_light_data: bool = False
 
 
 @dataclass
