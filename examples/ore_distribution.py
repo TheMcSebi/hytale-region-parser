@@ -392,7 +392,7 @@ def plot_ore_distribution(results: Dict[str, Any], output_path: Path) -> None:
     # Update layout
     fig.update_layout(
         title_text=f"Ore Distribution by Y-Level (Center: {results['center']}, Area: {results['area_size']}x{results['area_size']} chunks)",
-        height=300 * num_ores,
+        height=400 * num_ores,
         showlegend=False
     )
     

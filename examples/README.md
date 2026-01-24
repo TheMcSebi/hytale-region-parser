@@ -49,7 +49,7 @@ Exports all block positions with their exact world coordinates to JSON files.
 - Output both formatted and compact JSON
 - Display file sizes for the exports
 
-**Warning:** This can generate very large files (100s of MB) for densely populated regions!
+Ever wanted to inflate 30MB of binary data to about 2GB of json for absolutely no reason? This is the script to run.
 
 **Usage:**
 ```bash
@@ -118,6 +118,46 @@ python .\examples\ore_distribution.py --center_x 2160 --center_z 2120 --area_siz
 
 ---
 
+### 6. Surface Map and Heightmap Generator (`surface_map.py`)
+
+Generates two PNG images from all region files in a folder:
+- **Surface map:** A top-down view where each pixel shows the color of the highest block at that position
+- **Heightmap:** A grayscale image where brightness corresponds to the height of the highest block
+
+**Features:**
+- Automatically scans all `.region.bin` files in a folder
+- Creates a complete world overview image
+- Color-coded blocks based on block type
+- Normalized heightmap for terrain visualization
+- Displays block color legend for common blocks
+
+This script requires the Pillow and numpy libraries.  
+Install with `pip install pillow numpy`
+
+**Usage:**
+```bash
+# Use default Hytale chunks folder
+python examples/surface_map.py
+
+# Specify a custom folder
+python examples/surface_map.py /path/to/chunks/folder
+
+# Specify output filename prefix
+python examples/surface_map.py /path/to/chunks --output my_world
+```
+
+**Output files:**
+- `map_surface.png` - Top-down surface view with block colors
+- `map_heightmap.png` - Grayscale heightmap
+
+To view the generated output files, the HTML Viewer in surface_map_viewer.html can be used.
+
+Screenshots of map of V1 world generator after a couple hours of playtime:
+
+![surface map viewer](data/surface_map_viewer.jpg)
+
+---
+
 ## Output Examples
 
 ### Basic Parsing Output
@@ -146,14 +186,14 @@ ORE TOTALS
 ----------------------------------------------------------------------
 Ore Type                               Count     Percentage
 ----------------------------------------------------------------------
-  Ore_Coal                               1,234        45.00%
+  Ore_Copper                             1,234        45.00%
   Ore_Iron                                 567        20.67%
   Ore_Gold                                 234         8.53%
   ...
 
 Y-LEVEL DISTRIBUTION
 ----------------------------------------------------------------------
-Ore_Coal:
+Ore_Copper:
   Y range: 12 to 128
   Average Y: 64.5
   Peak Y: 56 (most common level)
@@ -163,6 +203,12 @@ Ore_Coal:
     Y  32-47  :    234 ███████████████
     ...
 ```
+
+Screenshots of the generated HTML plots
+
+![3d view](data/ore_distribution_3d_view.png)
+
+![diagram](data/ore_distribution_diagram.png)
 
 ## Tips
 

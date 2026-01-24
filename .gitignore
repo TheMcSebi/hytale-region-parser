@@ -209,3 +209,5 @@ __marimo__/
 run.cmd
 *.json
 examples/*.html
+!examples/surface_map_viewer.html
+!examples/data/color_map.json
