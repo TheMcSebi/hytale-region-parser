@@ -214,7 +214,7 @@ Screenshots of the generated HTML plots
 
 1. **Memory Usage:** For very large regions, use `iter_chunks()` instead of `to_dict()` to process chunks one at a time.
 
-2. **Performance:** Use `to_dict_summary_only()` when you only need block counts, not individual positions.
+2. **Performance:** Use `to_dict_summary_only()` when you only need block counts, not individual positions. When parsing entire worlds, consider using multiprocessing. See surface_map.py for examples.
 
 3. **Multiple Regions:** To process multiple regions, loop over `.region.bin` files:
    ```python
