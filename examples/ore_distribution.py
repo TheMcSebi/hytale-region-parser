@@ -28,12 +28,13 @@ COMBINED_PLOT_HEIGHT = 1260
 
 # Default colors for ore types
 ORE_COLORS = {
-    "Ore_Adamantite": "#DC143C",  # Red
+    "Ore_Adamantite": "#DC143C",   # Red
     "Ore_Thorium": "#228B22",      # Green
     "Ore_Cobalt": "#1E90FF",       # Blue
     "Ore_Iron": "#F5DEB3",         # Beige
     "Ore_Copper": "#FF8C00",       # Orange
     "Ore_Silver": "#C0C0C0",       # Light grey
+    "Ore_Gold": "#FFD700"          # Gold
 }
 
 
