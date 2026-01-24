@@ -8,7 +8,7 @@ A Python library for parsing Hytale `.region.bin` files (IndexedStorageFile form
 
 ## Overview
 
-This tool parses Hytale world region files to extract and analyze chunk data, including block information, components, containers, and entities. It implements a custom BSON parser compatible with Hytale's codec system and handles zstandard-compressed data blobs.
+This tool parses Hytale world region files to extract and analyze chunk data, including block information, components, containers, and entities. It implements a parser compatible with Hytale's codec system and handles zstandard-compressed data blobs.
 
 The code is mostly written by letting Claude Sonnet and Opus analyze the HytaleServer.jar's decompiled code and reimplementing the relevant parts in Python. I mainly wrote this because I wanted to learn about ore distribution, but it quickly evolved into a library.
 
@@ -209,16 +209,91 @@ class ItemContainerData:
     custom_name: Optional[str]        # Custom container name
 ```
 
-## File Format
+## About Hytale's File Format
 
-The parser handles the following Hytale data structures:
+### Region File Structure (`.region.bin`)
 
-- **IndexedStorageFile**: Container format for region files (32-byte header + index table + segments)
-- **Chunk Data**: 32x32 column sections containing blocks and metadata
-- **Block Components**: Special block data (containers, signs, doors, etc.)
-- **BSON Documents**: Hytale's serialization format for game data
+Hytale stores world data in **IndexedStorageFile** format, a custom binary container:
 
-Each region file contains up to 1024 chunks (32×32 grid), compressed with Zstandard.
+```
+┌─────────────────────────────────────────────────────────────┐
+│ HEADER (32 bytes)                                           │
+│   ├─ Magic: "HytaleIndexedStorage" (20 bytes)               │
+│   ├─ Version: uint32 BE (0 or 1)                            │
+│   ├─ Blob Count: uint32 BE (1024 for 32×32 chunks)          │
+│   └─ Segment Size: uint32 BE                                │
+├─────────────────────────────────────────────────────────────┤
+│ BLOB INDEX TABLE (blob_count × 4 bytes)                     │
+│   └─ Segment index for each chunk (uint32 BE, 0 = empty)    │
+├─────────────────────────────────────────────────────────────┤
+│ SEGMENTS (variable size)                                    │
+│   └─ Zstandard-compressed chunk data blobs                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Each region file contains up to **1024 chunks** (32×32 grid). The filename `X.Z.region.bin` indicates region coordinates, where each chunk's world position is calculated as `(region_x * 32 + local_x, region_z * 32 + local_z)`.
+
+### Blob/Chunk Data Structure
+
+Each compressed blob contains a **BSON document** with the following hierarchy:
+
+```
+Root
+├─ Version: int
+└─ Components
+   ├─ ChunkColumn
+   │  └─ Sections[] (up to 10 vertical sections, 32 blocks each = 320 height)
+   │     └─ Components
+   │        └─ Block
+   │           └─ Data: hex-encoded block section data
+   ├─ BlockComponentChunk
+   │  └─ BlockComponents{} (keyed by block index)
+   │     └─ Components (container, sign, farming, etc.)
+   └─ EntityChunk
+      └─ Entities[]
+```
+
+### Block Section Data Format
+
+The hex-encoded `Block.Data` field contains:
+
+| Offset | Size | Field |
+|--------|------|-------|
+| 0 | 4 | Block migration version (uint32 BE) |
+| 4 | 1 | Palette type: 0=Empty, 1=HalfByte, 2=Byte, 3=Short |
+| 5 | 2 | Palette entry count (uint16 BE) |
+| 7+ | var | Palette entries (ID + name + count per entry) |
+| var | var | Block indices (32×32×32 = 32768 blocks per section) |
+
+**Palette Entry Format:**
+- 1 byte: Internal ID
+- 2 bytes: String length (uint16 BE)
+- N bytes: Block name (UTF-8, e.g., `Rock_Stone_Mossy`)
+- 2 bytes: Block count (int16 BE)
+
+**Block Index Encoding** (based on palette type):
+- **HalfByte (1):** 4 bits per block (16 max palette entries)
+- **Byte (2):** 8 bits per block (256 max palette entries)
+- **Short (3):** 16 bits per block (65536 max palette entries)
+
+Block index formula: `index = x + z*32 + y*32*32`
+
+### How the Parser Works
+
+1. **Open & Validate:** Read header, verify magic string `HytaleIndexedStorage`
+2. **Index Table:** Load segment pointers for all 1024 chunk slots
+3. **Iterate Chunks:** For each non-empty slot:
+   - Seek to segment position
+   - Read blob header (source length + compressed length)
+   - Decompress with **zstandard**
+   - Parse as BSON document
+4. **Extract Block Data:** For each section in `ChunkColumn.Sections`:
+   - Decode hex block data
+   - Parse palette (block names + counts)
+   - Optionally decode full block indices for position mapping
+5. **Extract Components:** Parse containers, signs, farming blocks, etc. from `BlockComponentChunk`
+
+
 
 ## Development
 
@@ -247,16 +322,6 @@ pip install build twine
 python -m build
 twine upload dist/*
 ```
-
-## Output
-
-The parser identifies various block categories including:
-- Rock, Soil, Plant, Wood, Ore
-- Furniture, Metal, Stone, Grass, Tree
-- Water, Lava, Ice, Sand, Brick, Glass
-- Structural elements (Roof, Floor, Stair, Door, Window)
-- Interactive blocks (Chest, Barrel, Crate)
-- And more
 
 ## License
 
