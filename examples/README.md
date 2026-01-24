@@ -102,9 +102,14 @@ Analyzes the distribution of ore blocks in a specific area, useful for understan
 - Display histogram of ore density by Y-range
 - Show sample ore positions
 
+This script additionally requires the numpy and plotly libraries.  
+Install with `pip install numpy plotly`
+
 **Usage:**
 ```bash
-python examples/ore_distribution.py
+python examples/ore_distribution.py --help
+
+python .\examples\ore_distribution.py --center_x 2160 --center_z 2120 --area_size 5 --output_filename ores_mine --plot3d_resolution 4
 ```
 
 **Configuration:**
