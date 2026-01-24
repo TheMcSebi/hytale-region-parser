@@ -1,7 +1,7 @@
 """
 Chunk Data Parser
 
-Parser for chunk data in Hytale's custom codec format (BSON-based).
+Parser for chunk data in Hytale's region format (BSON-based).
 """
 
 import re
@@ -19,37 +19,7 @@ from .models import (
 
 
 class ChunkDataParser:
-    """Parser for chunk data in Hytale's custom codec format (BSON-based)"""
-
-    # Known component types in chunk data
-    KNOWN_COMPONENTS = {
-        'WorldChunk', 'BlockChunk', 'BlockComponentChunk', 'BlockComponents',
-        'ChunkColumn', 'ChunkSection', 'EntityChunk', 'EnvironmentChunk',
-        'Block', 'BlockPhysics', 'FluidSection', 'Fluid'
-    }
-
-    # Known block state types
-    KNOWN_BLOCK_STATES = {
-        'ItemContainerState', 'SignState', 'BedState', 'DoorState',
-        'TrapDoorState', 'FenceGateState', 'LeverState', 'ButtonState',
-        'PressurePlateState', 'TorchState', 'LampState', 'BellState'
-    }
-
-    # Block name pattern: Category_SubCategory_Details (e.g., Rock_Stone_Mossy)
-    BLOCK_NAME_PATTERN = re.compile(
-        r'^([A-Z][a-z]+)_([A-Z][a-z][a-z0-9]*)(?:_[A-Z][a-z][a-z0-9]*)*$'
-    )
-
-    # Valid block name prefixes
-    VALID_PREFIXES = {
-        'Rock_', 'Soil_', 'Plant_', 'Wood_', 'Ore_', 'Furniture_',
-        'Rubble_', 'Metal_', 'Stone_', 'Grass_', 'Tree_', 'Water_',
-        'Lava_', 'Ice_', 'Sand_', 'Brick_', 'Glass_', 'Cloth_',
-        'Roof_', 'Survival_', 'Structure_', 'Decor_', 'Light_',
-        'Fence_', 'Wall_', 'Floor_', 'Stair_', 'Door_', 'Window_',
-        'Chest_', 'Barrel_', 'Crate_', 'Tool_', 'Weapon_',
-        'Crystal_', 'Coral_', 'Seaweed_', 'Shell_', 'Kelp_'
-    }
+    """Parser for chunk data in Hytale's region format (BSON-based)"""
 
     def __init__(self, data: bytes):
         """
