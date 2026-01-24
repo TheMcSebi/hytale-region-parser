@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-01-24
+
+### Added
+- Block filter flag (`--filter`/`-f`) for CLI with fnmatch pattern support
+- Comprehensive test suite for `IndexedStorageFile` (24 tests)
+- Comprehensive test suite for `ChunkDataParser` (28 tests)
+
+### Changed
+- Replaced custom `BsonParser` class with direct `bson.loads()` usage
+- Condensed CLI module - merged parsing functions, extracted output helper
+- Simplified `ChunkDataParser` - removed unused byte-reading utility methods
+
+### Removed
+- `BsonParser` class (functionality moved inline to `ChunkDataParser`)
+- `RegionData` dataclass (was unused)
+- Unused `read_*` methods for debugging use from `ChunkDataParser`
+
 ## [0.1.1] - 2026-01-22
 
 ### Changed

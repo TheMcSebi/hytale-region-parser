@@ -33,7 +33,7 @@ class TestCLI:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "0.1.1" in captured.out
+        assert "0.1.2" in captured.out
 
     def test_file_not_found(self, capsys):
         """Test error when file doesn't exist."""
