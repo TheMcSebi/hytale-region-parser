@@ -83,7 +83,9 @@ def analyze_ore_distribution(
     center_x: int,
     center_z: int,
     area_size: int = 3,
-    sanitize_names: bool = False
+    *,
+    sanitize_names: bool = False,
+    filter_cracked: bool = False
 ) -> Dict[str, Any]:
     """
     Analyze ore distribution in a square area of chunks around a center point.
@@ -94,7 +96,7 @@ def analyze_ore_distribution(
         center_z: World Z coordinate of the center
         area_size: Size of the square area in chunks (e.g., 3 for 3x3)
         sanitize_names: Strip rock type from ore name
-    
+        filter_cracked: Exclude cracked ore blocks from the analysis
     Returns:
         Dictionary containing ore distribution statistics
     """
@@ -151,6 +153,8 @@ def analyze_ore_distribution(
                     # Check block counts for ores
                     for block_name, count in section.block_counts.items():
                         if block_name and block_name.startswith("Ore_"):
+                            if filter_cracked and block_name.endswith("_Cracked"):
+                                continue
                             if sanitize_names:
                                 block_name = sanitize_ore_name(block_name)
                             ore_counts[block_name] += count
@@ -642,6 +646,9 @@ def main():
     # Sanitize names, removing the containing subtype. E.g. "Ore_Gold_Volcanic" becomes "Ore_Gold"
     sanitize_names = True
     
+    # Filter "_Cracked", since the devs decided it would be funny if blocks that don't drop ore are also called "Ore_..._Cracked"
+    filter_cracked = True 
+    
     if not chunks_folder.exists():
         print(f"Error: Chunks folder not found at {chunks_folder}")
         print("Please update the 'chunks_folder' variable to point to your Hytale chunks directory")
@@ -655,7 +662,7 @@ def main():
     output_filename = sanitize_filename(args.output_filename)
     
     # Run analysis
-    results = analyze_ore_distribution(chunks_folder, center_x, center_z, area_size, sanitize_names)
+    results = analyze_ore_distribution(chunks_folder, center_x, center_z, area_size, sanitize_names=sanitize_names, filter_cracked=filter_cracked)
     
     # Print report
     print_ore_report(results)
