@@ -507,73 +507,6 @@ def plot_ore_distribution_3d(
         )
     )
     
-    # Create individual 3D plots for each ore
-    individual_figs = []
-    
-    for idx, (ore_name, total_count) in enumerate(sorted_ores):
-        if ore_name not in positions_by_ore:
-            continue
-        
-        positions = positions_by_ore[ore_name]
-        if not positions:
-            continue
-        
-        # Bin positions by resolution
-        binned_counts: Dict[Tuple[int, int, int], int] = defaultdict(int)
-        for x, y, z in positions:
-            bin_x = (x // resolution) * resolution
-            bin_y = (y // resolution) * resolution
-            bin_z = (z // resolution) * resolution
-            binned_counts[(bin_x, bin_y, bin_z)] += 1
-        
-        xs = [pos[0] for pos in binned_counts.keys()]
-        ys = [pos[1] for pos in binned_counts.keys()]
-        zs = [pos[2] for pos in binned_counts.keys()]
-        sizes = list(binned_counts.values())
-        
-        max_size = max(sizes) if sizes else 1
-        normalized_sizes = [5 + (s / max_size) * 25 for s in sizes]
-        
-        color = get_ore_color(ore_name, idx, num_ores)
-        
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter3d(
-                x=xs,
-                y=zs,  # World Z on plotly Y axis
-                z=ys,  # World Y (height) on plotly Z axis (vertical)
-                mode='markers',
-                name=ore_name,
-                marker=dict(
-                    size=normalized_sizes,
-                    color=color,
-                    opacity=0.7,
-                    line=dict(width=0.5, color='white')
-                ),
-                hovertemplate=(
-                    f"{ore_name}<br>"
-                    "X: %{x}<br>"
-                    "Y (Height): %{z}<br>"
-                    "Z: %{y}<br>"
-                    "Count: %{text}<extra></extra>"
-                ),
-                text=[str(s) for s in sizes]
-            )
-        )
-        
-        fig.update_layout(
-            title=f"{ore_name} Distribution (Total: {total_count:,}, Resolution: /{resolution})",
-            scene=dict(
-                xaxis_title="X (World)",
-                yaxis_title="Z (World)",
-                zaxis_title="Y (Height)",
-                aspectmode='data'
-            ),
-            height=INDIVIDUAL_PLOT_HEIGHT
-        )
-        
-        individual_figs.append(fig)
-    
     # Combine all figures into a single HTML
     html_content = f"""
 <!DOCTYPE html>
@@ -602,12 +535,7 @@ def plot_ore_distribution_3d(
     # Add combined plot
     html_content += f"<script>Plotly.newPlot('combined-plot', {combined_fig.to_json()}.data, {combined_fig.to_json()}.layout);</script>\n"
     
-    # Add individual plots
-    for i, (fig, (ore_name, _)) in enumerate(zip(individual_figs, sorted_ores)):
-        html_content += f"""
-    <div class="plot-container" id="plot-{i}"></div>
-    <script>Plotly.newPlot('plot-{i}', {fig.to_json()}.data, {fig.to_json()}.layout);</script>
-"""
+    # possible space for more data output (html tables) or more plots
     
     html_content += """
 </body>
