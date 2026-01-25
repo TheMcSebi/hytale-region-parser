@@ -52,7 +52,7 @@ def sanitize_filename(filename: str) -> str:
         ret += c if c.isalnum() or c in (" ", ".", "_", "-") else "_"
     return ret.strip()
 
-def sanitize_ore_name(name: str) -> str:
+def clean_ore_name(name: str) -> str:
     """Strip rock type suffix: Ore_Gold_Volcanic -> Ore_Gold"""
     parts = name.split("_")
     return f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else name
@@ -84,7 +84,7 @@ def analyze_ore_distribution(
     center_z: int,
     area_size: int = 3,
     *,
-    sanitize_names: bool = False,
+    clean_ore_names: bool = False,
     filter_cracked: bool = False
 ) -> Dict[str, Any]:
     """
@@ -95,7 +95,7 @@ def analyze_ore_distribution(
         center_x: World X coordinate of the center
         center_z: World Z coordinate of the center
         area_size: Size of the square area in chunks (e.g., 3 for 3x3)
-        sanitize_names: Strip rock type from ore name
+        clean_ore_names: Strip rock type from ore name
         filter_cracked: Exclude cracked ore blocks from the analysis
     Returns:
         Dictionary containing ore distribution statistics
@@ -155,8 +155,8 @@ def analyze_ore_distribution(
                         if block_name and block_name.startswith("Ore_"):
                             if filter_cracked and block_name.endswith("_Cracked"):
                                 continue
-                            if sanitize_names:
-                                block_name = sanitize_ore_name(block_name)
+                            if clean_ore_names:
+                                block_name = clean_ore_name(block_name)
                             ore_counts[block_name] += count
                     
                     # If we have block indices, get exact positions
@@ -182,8 +182,8 @@ def analyze_ore_distribution(
                                     
                                     name = id_to_name.get(internal_id, "")
                                     if name.startswith("Ore_"):
-                                        if sanitize_names:
-                                            name = sanitize_ore_name(name)
+                                        if clean_ore_names:
+                                            name = clean_ore_name(name)
                                         local_x = block_idx % 32
                                         local_z = (block_idx // 32) % 32
                                         local_y = block_idx // (32 * 32)
@@ -201,8 +201,8 @@ def analyze_ore_distribution(
                                     break
                                 name = id_to_name.get(internal_id, "")
                                 if name.startswith("Ore_"):
-                                    if sanitize_names:
-                                        name = sanitize_ore_name(name)
+                                    if clean_ore_names:
+                                        name = clean_ore_name(name)
                                     local_x = block_idx % 32
                                     local_z = (block_idx // 32) % 32
                                     local_y = block_idx // (32 * 32)
@@ -223,8 +223,8 @@ def analyze_ore_distribution(
                                 internal_id = struct.unpack('>H', indices[i:i+2])[0]
                                 name = id_to_name.get(internal_id, "")
                                 if name.startswith("Ore_"):
-                                    if sanitize_names:
-                                        name = sanitize_ore_name(name)
+                                    if clean_ore_names:
+                                        name = clean_ore_name(name)
                                     local_x = block_idx % 32
                                     local_z = (block_idx // 32) % 32
                                     local_y = block_idx // (32 * 32)
@@ -554,12 +554,15 @@ def main():
     # Configuration - update these paths!
     appdata = os.getenv('APPDATA')
     chunks_folder = Path(appdata + r"\Hytale\UserData\Saves\Server\universe\worlds\default\chunks")
+    
     parser.add_argument("--chunks_folder", type=Path, default=chunks_folder, help="Path to the Hytale chunks directory")
     parser.add_argument("--center_x", type=int, default=0, help="Center X coordinate for the analysis")
     parser.add_argument("--center_z", type=int, default=0, help="Center Z coordinate for the analysis")
     parser.add_argument("--area_size", type=int, default=3, help="Area size in chunks (e.g., 3 for 3x3 chunks)")
     parser.add_argument("--plot3d_resolution", type=int, default=8, help="Resolution for the 3D plot")
     parser.add_argument("--output_filename", type=str, default="ore_distribution", help="Output filename for the plots")
+    parser.add_argument("--clean_ore_names", action=argparse.BooleanOptionalAction, default=True, help="Clean ore names by removing subtypes (e.g. Ore_Gold_Volcanic becomes Ore_Gold)")
+    parser.add_argument("--filter_cracked", action=argparse.BooleanOptionalAction, default=True, help="Filter out ores with '_Cracked' in their names, as they typically do not drop ores")
     args = parser.parse_args()
     
     chunks_folder = args.chunks_folder
@@ -571,26 +574,30 @@ def main():
     # Area size in chunks (3 = 3x3 = 9 chunks = 96x96 blocks area, 9 = 9x9 = 81 chunks = 288x288 blocks area)
     area_size = args.area_size
     
-    # Sanitize names, removing the containing subtype. E.g. "Ore_Gold_Volcanic" becomes "Ore_Gold"
-    sanitize_names = True
+    # Clean ore names, removing the containing subtype. E.g. "Ore_Gold_Volcanic" becomes "Ore_Gold"
+    clean_ore_names = args.clean_ore_names
     
     # Filter "_Cracked", since the devs decided it would be funny if blocks that don't drop ore are also called "Ore_..._Cracked"
-    filter_cracked = True 
+    filter_cracked = args.filter_cracked 
     
     if not chunks_folder.exists():
         print(f"Error: Chunks folder not found at {chunks_folder}")
-        print("Please update the 'chunks_folder' variable to point to your Hytale chunks directory")
+        print("Please update the '--chunks_folder' argument to point to your Hytale chunks directory")
+        print()
         return
     
     print("=" * 70)
     print("ORE DISTRIBUTION ANALYSIS")
     print("=" * 70)
     print(f"Chunks folder: {chunks_folder}")
+    print(f"Clean ore names: {clean_ore_names}")
+    print(f"Filter cracked ores: {filter_cracked}")
+    print("=" * 70)
     
     output_filename = sanitize_filename(args.output_filename)
     
     # Run analysis
-    results = analyze_ore_distribution(chunks_folder, center_x, center_z, area_size, sanitize_names=sanitize_names, filter_cracked=filter_cracked)
+    results = analyze_ore_distribution(chunks_folder, center_x, center_z, area_size, clean_ore_names=clean_ore_names, filter_cracked=filter_cracked)
     
     # Print report
     print_ore_report(results)
